@@ -65,7 +65,16 @@ func (s *Sorter) hasOrderChanged(original, sorted []*MethodInfo) bool {
 }
 
 func (s *Sorter) reorderMethods(sortedMethods []*MethodInfo) *ast.File {
-	// Instead of creating a new file, we modify the existing one to preserve comment associations
+	// Create a new file structure while preserving all original metadata
+	newFile := &ast.File{
+		Name:     s.file.Name,
+		Doc:      s.file.Doc,
+		Package:  s.file.Package,
+		Comments: s.file.Comments,
+		Imports:  s.file.Imports,
+		Scope:    s.file.Scope,
+	}
+
 	methodMap := make(map[*ast.FuncDecl]bool)
 	for _, method := range sortedMethods {
 		methodMap[method.FuncDecl] = true
@@ -86,10 +95,8 @@ func (s *Sorter) reorderMethods(sortedMethods []*MethodInfo) *ast.File {
 		newDecls = append(newDecls, method.FuncDecl)
 	}
 
-	// Update the original file's declarations instead of creating a new file
-	s.file.Decls = newDecls
-
-	return s.file
+	newFile.Decls = newDecls
+	return newFile
 }
 
 func WriteFile(filename string, content []byte) error {

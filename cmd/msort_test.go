@@ -12,6 +12,15 @@ func TestRunWithDryRun(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.go")
 
+	// Create go.mod file
+	goModContent := `module testmodule
+
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	testContent := `package test
 
 type Server struct{}
