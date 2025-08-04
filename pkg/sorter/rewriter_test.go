@@ -572,6 +572,141 @@ func (c *Client) initializeProcess(config interface{}) error {
 	}
 }
 
+func TestSorterPreservesRealWorldComments(t *testing.T) {
+	// This test reproduces edge cases found in real-world codebases
+	source := `package test
+
+type Manager struct{}
+
+// SetContext updates the manager's context (used for cancellation)
+func (m *Manager) SetContext(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	// Cancel old context
+	if m.cancel != nil {
+		m.cancel()
+	}
+	
+	// Create new context
+	m.ctx, m.cancel = context.WithCancel(ctx)
+}
+
+// DetectServer attempts to find a language server for the given language.
+func (m *Manager) DetectServer(language string) *DetectedServer {
+	servers := m.getServerCandidates(language)
+
+	for _, server := range servers {
+		// Try to get version
+		if cmd := m.findExecutable(server.Command); cmd != "" {
+			server.Command = cmd
+			return &server
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) helper() {
+	// Internal helper
+}
+`
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sorter := New(fset, file)
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !changed {
+		t.Error("Expected methods to be reordered")
+	}
+
+	sortedCode := string(sorted)
+
+	// Critical checks for real-world comment preservation:
+
+	// 1. Method header comments should stay with methods
+	if !strings.Contains(sortedCode, "// SetContext updates the manager's context (used for cancellation)\nfunc (m *Manager) SetContext(") {
+		t.Errorf("SetContext method header comment not properly attached.\nActual:\n%s", sortedCode)
+	}
+
+	if !strings.Contains(sortedCode, "// DetectServer attempts to find a language server for the given language.\nfunc (m *Manager) DetectServer(") {
+		t.Errorf("DetectServer method header comment not properly attached.\nActual:\n%s", sortedCode)
+	}
+
+	// 2. Inline comments should stay within their method bodies
+	setContextStart := strings.Index(sortedCode, "func (m *Manager) SetContext(")
+	setContextEnd := setContextStart
+	if setContextStart != -1 {
+		// Find the end of SetContext method
+		braceCount := 0
+		inMethod := false
+		for i, char := range sortedCode[setContextStart:] {
+			if char == '{' {
+				braceCount++
+				inMethod = true
+			} else if char == '}' && inMethod {
+				braceCount--
+				if braceCount == 0 {
+					setContextEnd = setContextStart + i
+					break
+				}
+			}
+		}
+
+		setContextBody := sortedCode[setContextStart : setContextEnd+1]
+
+		// These inline comments should be within the method body
+		inlineComments := []string{
+			"// Cancel old context",
+			"// Create new context",
+		}
+
+		for _, comment := range inlineComments {
+			if !strings.Contains(setContextBody, comment) {
+				t.Errorf("Inline comment '%s' missing from SetContext method body.\nMethod body:\n%s\n\nFull code:\n%s",
+					comment, setContextBody, sortedCode)
+			}
+		}
+	}
+
+	// 3. Method-specific inline comments should not float elsewhere
+	detectServerStart := strings.Index(sortedCode, "func (m *Manager) DetectServer(")
+	detectServerEnd := detectServerStart
+	if detectServerStart != -1 {
+		// Find the end of DetectServer method
+		braceCount := 0
+		inMethod := false
+		for i, char := range sortedCode[detectServerStart:] {
+			if char == '{' {
+				braceCount++
+				inMethod = true
+			} else if char == '}' && inMethod {
+				braceCount--
+				if braceCount == 0 {
+					detectServerEnd = detectServerStart + i
+					break
+				}
+			}
+		}
+
+		detectServerBody := sortedCode[detectServerStart : detectServerEnd+1]
+
+		// This comment should be within DetectServer method
+		if !strings.Contains(detectServerBody, "// Try to get version") {
+			t.Errorf("Inline comment '// Try to get version' missing from DetectServer method body.\nMethod body:\n%s\n\nFull code:\n%s",
+				detectServerBody, sortedCode)
+		}
+	}
+}
+
 func TestSorterPreservesMethodHeaderComments(t *testing.T) {
 	source := `package test
 

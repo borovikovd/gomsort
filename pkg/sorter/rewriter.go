@@ -131,24 +131,54 @@ func (s *Sorter) reorderMethods(sortedMethods []*MethodInfo) *ast.File {
 // filterGlobalComments removes comments that are already associated with method Doc fields
 // to prevent duplicate comments in the output
 func (s *Sorter) filterGlobalComments() []*ast.CommentGroup {
-	// Collect all Doc comments from method declarations
+	// Smart filtering: only remove method header comments that are likely to be repositioned
+	// incorrectly, while keeping others that go/format needs for proper positioning
+
 	docComments := make(map[*ast.CommentGroup]bool)
 
+	// Collect Doc comments from method declarations
 	for _, decl := range s.file.Decls {
 		if funcDecl, ok := decl.(*ast.FuncDecl); ok && funcDecl.Recv != nil && funcDecl.Doc != nil {
 			docComments[funcDecl.Doc] = true
 		}
 	}
 
-	// Filter out global comments that are already Doc comments
 	var filteredComments []*ast.CommentGroup
 	for _, comment := range s.file.Comments {
-		if !docComments[comment] {
+		// Only filter out Doc comments that are directly before method declarations
+		// Keep inline comments and other comments that go/format needs
+		if docComments[comment] {
+			// This is a method header comment - check if it would cause floating
+			shouldFilter := s.isMethodHeaderComment(comment)
+			if !shouldFilter {
+				filteredComments = append(filteredComments, comment)
+			}
+		} else {
+			// Keep all non-Doc comments (inline comments, etc.)
 			filteredComments = append(filteredComments, comment)
 		}
 	}
 
 	return filteredComments
+}
+
+// isMethodHeaderComment determines if a comment is a method header that should be filtered
+func (s *Sorter) isMethodHeaderComment(comment *ast.CommentGroup) bool {
+	commentEnd := s.fset.Position(comment.End()).Line
+
+	// Find if there's a method declaration immediately after this comment
+	for _, decl := range s.file.Decls {
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok && funcDecl.Recv != nil {
+			declStart := s.fset.Position(decl.Pos()).Line
+
+			// If method starts within 2 lines after comment ends, it's likely a header comment
+			if declStart > commentEnd && declStart-commentEnd <= 2 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func WriteFile(filename string, content []byte) error {
