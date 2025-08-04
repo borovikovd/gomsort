@@ -48,7 +48,6 @@ type Cache struct {
 	items map[string]interface{}
 }
 
-// Entry point
 func (c *Cache) Get(key string) (interface{}, bool) {
 	if !c.isValid() {
 		return nil, false
@@ -60,7 +59,6 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 
 // Shared helper (high in-degree)
 
-// Entry point
 func (c *Cache) Set(key string, value interface{}) error {
 	if !c.isValid() {
 		c.initialize()
@@ -78,12 +76,10 @@ func (c *Cache) retrieve(key string) (interface{}, bool) {
 	return val, ok
 }
 
-// Helper for Set
 func (c *Cache) store(key string, value interface{}) {
 	c.items[key] = value
 }
 
-// Helper for initialization
 func (c *Cache) initialize() {
 	c.items = make(map[string]interface{})
 }

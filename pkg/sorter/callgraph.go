@@ -15,6 +15,7 @@ type CallGraph struct {
 func NewCallGraph() *CallGraph {
 	return &CallGraph{methods: make(map[string]*MethodInfo), calls: make(map[string][]string), positions: make(map[string]token.Pos)}
 }
+
 func buildCallGraph(file *ast.File) *CallGraph {
 	cg := NewCallGraph()
 	for _, decl := range file.Decls {
@@ -45,6 +46,7 @@ type callVisitor struct {
 func methodKey(receiver, method string) string {
 	return receiver + "." + method
 }
+
 func (cg *CallGraph) AddMethod(method *MethodInfo) {
 	key := methodKey(method.ReceiverName, method.Name)
 	cg.methods[key] = method
@@ -53,6 +55,7 @@ func (cg *CallGraph) AddMethod(method *MethodInfo) {
 		cg.calls[key] = []string{}
 	}
 }
+
 func (cg *CallGraph) AddCall(fromReceiver, fromMethod, toReceiver, toMethod string) {
 	fromKey := methodKey(fromReceiver, fromMethod)
 	toKey := methodKey(toReceiver, toMethod)
@@ -66,6 +69,7 @@ func (cg *CallGraph) AddCall(fromReceiver, fromMethod, toReceiver, toMethod stri
 	}
 	cg.calls[fromKey] = append(cg.calls[fromKey], toKey)
 }
+
 func (cg *CallGraph) CalculateMetrics() {
 	inDegree := make(map[string]int)
 	for _, calls := range cg.calls {
@@ -105,6 +109,7 @@ func (cg *CallGraph) CalculateMetrics() {
 		method.MaxDepth = maxDepth[key]
 	}
 }
+
 func (cg *CallGraph) GetMethods() []*MethodInfo {
 	methods := make([]*MethodInfo, 0, len(cg.methods))
 	for _, method := range cg.methods {
@@ -112,6 +117,7 @@ func (cg *CallGraph) GetMethods() []*MethodInfo {
 	}
 	return methods
 }
+
 func (v *callVisitor) Visit(node ast.Node) ast.Visitor {
 	switch n := node.(type) {
 	case *ast.CallExpr:
