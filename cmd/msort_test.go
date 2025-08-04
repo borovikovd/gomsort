@@ -101,6 +101,15 @@ func TestRunWithDirectory(t *testing.T) {
 	// Create a temporary directory with test files
 	tmpDir := t.TempDir()
 
+	// Create go.mod file
+	goModContent := `module testmodule
+
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Create multiple Go files
 	testFiles := []struct {
 		name    string
@@ -175,6 +184,16 @@ func TestSomething(t *testing.T) {}
 func TestRunWithRecursive(t *testing.T) {
 	// Create a nested directory structure
 	tmpDir := t.TempDir()
+
+	// Create go.mod file
+	goModContent := `module testmodule
+
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	subDir := filepath.Join(tmpDir, "subdir")
 	err := os.Mkdir(subDir, 0755)
 	if err != nil {

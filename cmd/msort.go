@@ -33,6 +33,10 @@ func processPath(path string, config *Config) error {
 	}
 
 	if info.IsDir() {
+		// Check if we're in a Go module context when processing directories
+		if err := checkGoModule(path); err != nil {
+			return err
+		}
 		return processDirectory(path, config)
 	}
 
@@ -41,6 +45,25 @@ func processPath(path string, config *Config) error {
 	}
 
 	return nil
+}
+
+func checkGoModule(dir string) error {
+	// Look for go.mod in current directory or any parent directory
+	current := dir
+	for {
+		goModPath := filepath.Join(current, "go.mod")
+		if _, err := os.Stat(goModPath); err == nil {
+			return nil // Found go.mod
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			break // Reached filesystem root
+		}
+		current = parent
+	}
+
+	return fmt.Errorf("go.mod file not found in current directory or any parent directory; see 'go help modules'")
 }
 
 func processDirectory(dir string, config *Config) error {
@@ -53,6 +76,7 @@ func processDirectory(dir string, config *Config) error {
 		path := filepath.Join(dir, entry.Name())
 
 		if entry.IsDir() {
+			// Skip hidden directories (like go fmt)
 			if !strings.HasPrefix(entry.Name(), ".") {
 				if err := processDirectory(path, config); err != nil {
 					return err

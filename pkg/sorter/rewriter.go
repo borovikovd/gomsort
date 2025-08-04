@@ -25,32 +25,29 @@ func (s *Sorter) Sort() ([]byte, bool, error) {
 	methods := callGraph.GetMethods()
 
 	if len(methods) == 0 {
-		var buf bytes.Buffer
-		if err := format.Node(&buf, s.fset, s.file); err != nil {
-			return nil, false, err
-		}
-		return buf.Bytes(), false, nil
+		content, err := s.formatFile(s.file)
+		return content, false, err
 	}
 
 	sortedMethods := sortMethods(methods)
 
 	changed := s.hasOrderChanged(methods, sortedMethods)
 	if !changed {
-		var buf bytes.Buffer
-		if err := format.Node(&buf, s.fset, s.file); err != nil {
-			return nil, false, err
-		}
-		return buf.Bytes(), false, nil
+		content, err := s.formatFile(s.file)
+		return content, false, err
 	}
 
 	newFile := s.reorderMethods(sortedMethods)
+	content, err := s.formatFile(newFile)
+	return content, true, err
+}
 
+func (s *Sorter) formatFile(file *ast.File) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := format.Node(&buf, s.fset, newFile); err != nil {
-		return nil, false, err
+	if err := format.Node(&buf, token.NewFileSet(), file); err != nil {
+		return nil, err
 	}
-
-	return buf.Bytes(), true, nil
+	return buf.Bytes(), nil
 }
 
 func (s *Sorter) hasOrderChanged(original, sorted []*MethodInfo) bool {
@@ -82,15 +79,15 @@ func (s *Sorter) reorderMethods(sortedMethods []*MethodInfo) *ast.File {
 		methodMap[method.FuncDecl] = true
 	}
 
+	// Add non-method declarations first
 	for _, decl := range s.file.Decls {
-		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
-			if methodMap[funcDecl] {
-				continue
-			}
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok && methodMap[funcDecl] {
+			continue
 		}
 		newFile.Decls = append(newFile.Decls, decl)
 	}
 
+	// Add methods in sorted order
 	for _, method := range sortedMethods {
 		newFile.Decls = append(newFile.Decls, method.FuncDecl)
 	}
