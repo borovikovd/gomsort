@@ -71,7 +71,7 @@ func (s *Sorter) reorderMethods(sortedMethods []*MethodInfo) *ast.File {
 		methodMap[method.FuncDecl] = true
 	}
 
-	var newDecls []ast.Decl
+	newDecls := make([]ast.Decl, 0, len(s.file.Decls))
 
 	// Add non-method declarations first
 	for _, decl := range s.file.Decls {

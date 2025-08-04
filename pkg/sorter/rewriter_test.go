@@ -263,15 +263,15 @@ func (r *Row) helper() string {
 	if !strings.Contains(sortedCode, "type Row struct") {
 		t.Errorf("Row struct definition malformed. Actual code:\n%s", sortedCode)
 	}
-	
+
 	if !strings.Contains(sortedCode, "data map[string]interface{}") {
 		t.Errorf("Row struct field malformed. Actual code:\n%s", sortedCode)
 	}
-	
+
 	if !strings.Contains(sortedCode, "type Cache struct") {
 		t.Errorf("Cache struct definition malformed. Actual code:\n%s", sortedCode)
 	}
-	
+
 	if !strings.Contains(sortedCode, "items map[string]interface{}") {
 		t.Errorf("Cache struct field malformed. Actual code:\n%s", sortedCode)
 	}
@@ -280,7 +280,7 @@ func (r *Row) helper() string {
 	if !strings.Contains(sortedCode, "func (r *Row) GetData()") {
 		t.Error("GetData method malformed")
 	}
-	
+
 	if !strings.Contains(sortedCode, "func (r *Row) helper()") {
 		t.Error("helper method malformed")
 	}
@@ -361,11 +361,11 @@ func (d *Database) validateCredentials() error {
 	if !strings.Contains(sortedCode, "type Database struct {") {
 		t.Error("Database struct definition malformed")
 	}
-	
+
 	if !strings.Contains(sortedCode, "host string") {
 		t.Error("Database struct host field malformed")
 	}
-	
+
 	if !strings.Contains(sortedCode, "port int") {
 		t.Error("Database struct port field malformed")
 	}
@@ -445,7 +445,7 @@ func (d *Database) Connect() error {
 	if !strings.Contains(sortedCode, "type Row struct") || !strings.Contains(sortedCode, "data map[string]interface{}") {
 		t.Errorf("Row struct definition was malformed during sorting. Actual code:\n%s", sortedCode)
 	}
-	
+
 	if !strings.Contains(sortedCode, "type Cache struct") || !strings.Contains(sortedCode, "items map[string]interface{}") {
 		t.Errorf("Cache struct definition was malformed during sorting. Actual code:\n%s", sortedCode)
 	}
