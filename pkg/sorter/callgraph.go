@@ -3,6 +3,7 @@ package sorter
 import (
 	"go/ast"
 	"go/token"
+	"sort"
 	"strings"
 )
 
@@ -101,7 +102,16 @@ func (cg *CallGraph) CalculateMetrics() {
 		maxDepth[method] = depth
 		return depth
 	}
+	// Get keys in deterministic order to avoid race conditions
+	keys := make([]string, 0, len(cg.methods))
 	for key := range cg.methods {
+		keys = append(keys, key)
+	}
+
+	// Sort keys to ensure deterministic order
+	sort.Strings(keys)
+
+	for _, key := range keys {
 		calculateDepth(key)
 	}
 	for key, method := range cg.methods {
@@ -115,6 +125,13 @@ func (cg *CallGraph) GetMethods() []*MethodInfo {
 	for _, method := range cg.methods {
 		methods = append(methods, method)
 	}
+
+	// Sort by original position to ensure deterministic order
+	// This provides a stable base for the sorting algorithm
+	sort.Slice(methods, func(i, j int) bool {
+		return methods[i].Position < methods[j].Position
+	})
+
 	return methods
 }
 
