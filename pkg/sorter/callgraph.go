@@ -114,7 +114,7 @@ func buildCallGraph(file *ast.File) *CallGraph {
 
 	for _, decl := range file.Decls {
 		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
-			if method := extractMethodInfo(funcDecl); method != nil {
+			if method := extractMethodInfo(funcDecl); method != nil && funcDecl.Body != nil {
 				visitor := &callVisitor{
 					callGraph:       cg,
 					currentReceiver: method.ReceiverName,
