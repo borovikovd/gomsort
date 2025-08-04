@@ -44,7 +44,7 @@ func (s *Sorter) Sort() ([]byte, bool, error) {
 
 func (s *Sorter) formatFile(file *ast.File) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := format.Node(&buf, token.NewFileSet(), file); err != nil {
+	if err := format.Node(&buf, s.fset, file); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -65,34 +65,31 @@ func (s *Sorter) hasOrderChanged(original, sorted []*MethodInfo) bool {
 }
 
 func (s *Sorter) reorderMethods(sortedMethods []*MethodInfo) *ast.File {
-	newFile := &ast.File{
-		Name:     s.file.Name,
-		Doc:      s.file.Doc,
-		Package:  s.file.Package,
-		Comments: s.file.Comments,
-		Imports:  s.file.Imports,
-		Scope:    s.file.Scope,
-	}
-
+	// Instead of creating a new file, we modify the existing one to preserve comment associations
 	methodMap := make(map[*ast.FuncDecl]bool)
 	for _, method := range sortedMethods {
 		methodMap[method.FuncDecl] = true
 	}
+
+	var newDecls []ast.Decl
 
 	// Add non-method declarations first
 	for _, decl := range s.file.Decls {
 		if funcDecl, ok := decl.(*ast.FuncDecl); ok && methodMap[funcDecl] {
 			continue
 		}
-		newFile.Decls = append(newFile.Decls, decl)
+		newDecls = append(newDecls, decl)
 	}
 
 	// Add methods in sorted order
 	for _, method := range sortedMethods {
-		newFile.Decls = append(newFile.Decls, method.FuncDecl)
+		newDecls = append(newDecls, method.FuncDecl)
 	}
 
-	return newFile
+	// Update the original file's declarations instead of creating a new file
+	s.file.Decls = newDecls
+
+	return s.file
 }
 
 func WriteFile(filename string, content []byte) error {
