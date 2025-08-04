@@ -14,6 +14,7 @@ build:
 
 .PHONY: build-all
 build-all:
+	mkdir -p bin
 	GOOS=linux GOARCH=amd64 go build -o bin/$(BINARY_NAME)-linux-amd64 .
 	GOOS=darwin GOARCH=amd64 go build -o bin/$(BINARY_NAME)-darwin-amd64 .
 	GOOS=darwin GOARCH=arm64 go build -o bin/$(BINARY_NAME)-darwin-arm64 .
@@ -97,3 +98,5 @@ help:
 	@echo "  dev                - Development workflow (fmt + lint + test)"
 	@echo "  ci                 - CI workflow (fmt-check + lint + test)"
 	@echo "  help               - Show this help message"
+	@echo ""
+	@echo "Note: go-msort processes directories recursively by default (like go fmt)"

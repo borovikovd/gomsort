@@ -54,11 +54,11 @@ make build
 # Sort methods in a single file
 go-msort file.go
 
-# Sort methods in all Go files in current directory
+# Sort methods in all Go files in current directory (recursive by default)
 go-msort .
 
-# Recursively process directories
-go-msort -r ./src/
+# Sort methods in a specific directory tree
+go-msort ./src/
 
 # Dry run to see what would be changed
 go-msort -n file.go
@@ -70,8 +70,9 @@ go-msort -v file.go
 ### Options
 
 - `-n`: Dry run - show what would be changed without modifying files
-- `-r`: Recursively process directories
 - `-v`: Verbose output
+
+**Note**: Like `go fmt`, go-msort processes directories recursively by default.
 
 ### Integration with golangci-lint
 

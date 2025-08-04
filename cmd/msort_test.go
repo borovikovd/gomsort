@@ -26,10 +26,9 @@ func (s *Server) Start() error { return nil }
 	}
 
 	config := &Config{
-		DryRun:    true,
-		Recursive: false,
-		Verbose:   false,
-		Paths:     []string{testFile},
+		DryRun:  true,
+		Verbose: false,
+		Paths:   []string{testFile},
 	}
 
 	err = Run(config)
@@ -67,10 +66,9 @@ func (s *Server) Start() error { return nil }
 	}
 
 	config := &Config{
-		DryRun:    false,
-		Recursive: false,
-		Verbose:   false,
-		Paths:     []string{testFile},
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{testFile},
 	}
 
 	err = Run(config)
@@ -145,10 +143,9 @@ func TestSomething(t *testing.T) {}
 	}
 
 	config := &Config{
-		DryRun:    false,
-		Recursive: false,
-		Verbose:   true,
-		Paths:     []string{tmpDir},
+		DryRun:  false,
+		Verbose: true,
+		Paths:   []string{tmpDir},
 	}
 
 	err := Run(config)
@@ -205,10 +202,9 @@ func (s *Server) Start() error { return nil }
 	}
 
 	config := &Config{
-		DryRun:    false,
-		Recursive: true,
-		Verbose:   false,
-		Paths:     []string{tmpDir},
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{tmpDir},
 	}
 
 	err = Run(config)
@@ -233,10 +229,9 @@ func (s *Server) Start() error { return nil }
 
 func TestRunWithNonExistentFile(t *testing.T) {
 	config := &Config{
-		DryRun:    false,
-		Recursive: false,
-		Verbose:   false,
-		Paths:     []string{"/non/existent/file.go"},
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{"/non/existent/file.go"},
 	}
 
 	err := Run(config)
@@ -260,10 +255,9 @@ func (s *Server invalid syntax here
 	}
 
 	config := &Config{
-		DryRun:    false,
-		Recursive: false,
-		Verbose:   false,
-		Paths:     []string{testFile},
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{testFile},
 	}
 
 	err = Run(config)

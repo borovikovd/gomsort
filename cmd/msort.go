@@ -12,10 +12,9 @@ import (
 )
 
 type Config struct {
-	DryRun    bool
-	Recursive bool
-	Verbose   bool
-	Paths     []string
+	DryRun  bool
+	Verbose bool
+	Paths   []string
 }
 
 func Run(config *Config) error {
@@ -54,7 +53,7 @@ func processDirectory(dir string, config *Config) error {
 		path := filepath.Join(dir, entry.Name())
 
 		if entry.IsDir() {
-			if config.Recursive && !strings.HasPrefix(entry.Name(), ".") {
+			if !strings.HasPrefix(entry.Name(), ".") {
 				if err := processDirectory(path, config); err != nil {
 					return err
 				}

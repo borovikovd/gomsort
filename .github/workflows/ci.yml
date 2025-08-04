@@ -118,7 +118,7 @@ jobs:
         # Test dry run
         ./go-msort -n test_integration.go
         
-        # Test actual sorting
+        # Test actual sorting (recursive by default)
         ./go-msort -v test_integration.go
         
         # Verify file was modified
