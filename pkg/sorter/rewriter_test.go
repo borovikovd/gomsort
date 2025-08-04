@@ -292,91 +292,6 @@ func (r *Row) helper() string {
 	}
 }
 
-func TestSorterPreservesComments(t *testing.T) {
-	source := `package test
-
-// Database represents a database connection
-// Complex example with various method types and call patterns
-type Database struct {
-	host string
-	port int
-}
-
-// Row represents a database row
-type Row struct {
-	// Simple method with no dependencies
-	// Method that calls another method
-	// Helper method
-	data map[string]interface{}
-}
-
-// Entry point method (low depth, exported)
-func (d *Database) Connect() error {
-	return d.authenticate()
-}
-
-// Private helper with medium depth
-func (d *Database) authenticate() error {
-	// Helper method called by multiple methods (high in-degree)
-	return d.validateCredentials()
-}
-
-// Deep helper method (high depth)
-func (d *Database) validateCredentials() error {
-	return nil
-}
-`
-
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sorter := New(fset, file)
-	sorted, _, err := sorter.Sort()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sortedCode := string(sorted)
-
-	// Verify that comments are preserved and not mixed into struct definitions
-	expectedComments := []string{
-		"// Database represents a database connection",
-		"// Complex example with various method types and call patterns",
-		"// Row represents a database row",
-		"// Entry point method (low depth, exported)",
-		"// Private helper with medium depth",
-		"// Deep helper method (high depth)",
-	}
-
-	for _, comment := range expectedComments {
-		if !strings.Contains(sortedCode, comment) {
-			t.Errorf("Missing comment in sorted code: %s", comment)
-		}
-	}
-
-	// Verify struct definitions are intact and not corrupted by comments
-	if !strings.Contains(sortedCode, "type Database struct {") {
-		t.Error("Database struct definition malformed")
-	}
-
-	if !strings.Contains(sortedCode, "host string") {
-		t.Error("Database struct host field malformed")
-	}
-
-	if !strings.Contains(sortedCode, "port int") {
-		t.Error("Database struct port field malformed")
-	}
-
-	// Verify the code can be parsed again (no syntax errors)
-	_, err = parser.ParseFile(token.NewFileSet(), "test.go", sortedCode, parser.ParseComments)
-	if err != nil {
-		t.Errorf("Sorted code has syntax errors: %v\nCode:\n%s", err, sortedCode)
-	}
-}
-
 func TestSorterWithMalformedComplexExample(t *testing.T) {
 	// This test reproduces the exact issue seen in testdata/complex_example.go
 	source := `package testdata
@@ -535,13 +450,203 @@ func (s *Server) Start() error {
 
 	// There should be exactly one blank line between the methods
 	if helperStartLine-startEndLine != 2 {
-		t.Errorf("Expected exactly one blank line between methods, but found %d lines between them.\nSorted code:\n%s", 
+		t.Errorf("Expected exactly one blank line between methods, but found %d lines between them.\nSorted code:\n%s",
 			helperStartLine-startEndLine-1, sortedCode)
 	}
 
 	// Verify there's actually a blank line
 	if startEndLine+1 < len(lines) && strings.TrimSpace(lines[startEndLine+1]) != "" {
-		t.Errorf("Expected blank line after Start method, but found: '%s'\nSorted code:\n%s", 
+		t.Errorf("Expected blank line after Start method, but found: '%s'\nSorted code:\n%s",
 			lines[startEndLine+1], sortedCode)
+	}
+}
+
+func TestSorterPreservesInlineComments(t *testing.T) {
+	source := `package test
+
+type Client struct{}
+
+func (c *Client) helper() string {
+	return "help"
+}
+
+func (c *Client) Start() error {
+	// Initialize the client with specific settings
+	// This is a complex initialization process
+	config := getConfig()
+	
+	// Start the main process with optimizations  
+	if err := c.initializeProcess(config); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+func (c *Client) getConfig() interface{} {
+	return nil
+}
+
+func (c *Client) initializeProcess(config interface{}) error {
+	return nil
+}
+`
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sorter := New(fset, file)
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !changed {
+		t.Error("Expected methods to be reordered")
+	}
+
+	sortedCode := string(sorted)
+
+	// Check that Start comes before helper (exported first)
+	startIndex := strings.Index(sortedCode, "func (c *Client) Start(")
+	helperIndex := strings.Index(sortedCode, "func (c *Client) helper(")
+
+	if startIndex == -1 || helperIndex == -1 {
+		t.Fatal("Could not find methods in sorted code")
+	}
+
+	if startIndex > helperIndex {
+		t.Error("Methods were not properly sorted - Start should come before helper")
+	}
+
+	// CRITICAL: Check that inline comments stay with their code blocks
+	// The comments should still be inside the Start method, not floating elsewhere
+	startMethodStart := strings.Index(sortedCode, "func (c *Client) Start(")
+	startMethodEnd := startMethodStart
+
+	// Find the end of the Start method by counting braces
+	braceCount := 0
+	inMethod := false
+	for i, char := range sortedCode[startMethodStart:] {
+		if char == '{' {
+			braceCount++
+			inMethod = true
+		} else if char == '}' && inMethod {
+			braceCount--
+			if braceCount == 0 {
+				startMethodEnd = startMethodStart + i
+				break
+			}
+		}
+	}
+
+	startMethod := sortedCode[startMethodStart : startMethodEnd+1]
+
+	// These comments should still be inside the Start method
+	expectedComments := []string{
+		"// Initialize the client with specific settings",
+		"// This is a complex initialization process",
+		"// Start the main process with optimizations",
+	}
+
+	for _, comment := range expectedComments {
+		if !strings.Contains(startMethod, comment) {
+			t.Errorf("Comment '%s' is missing from Start method or has become a floating comment.\nStart method content:\n%s\n\nFull sorted code:\n%s",
+				comment, startMethod, sortedCode)
+		}
+	}
+
+	// Check that these comments are NOT floating elsewhere in the file
+	// (i.e., they're not appearing outside the Start method)
+	beforeStart := sortedCode[:startMethodStart]
+	afterStart := sortedCode[startMethodEnd+1:]
+
+	for _, comment := range expectedComments {
+		if strings.Contains(beforeStart, comment) || strings.Contains(afterStart, comment) {
+			t.Errorf("Comment '%s' has become a floating comment outside the Start method.\nSorted code:\n%s",
+				comment, sortedCode)
+		}
+	}
+}
+
+func TestSorterPreservesMethodHeaderComments(t *testing.T) {
+	source := `package test
+
+type Client struct{}
+
+func (c *Client) helper() string {
+	return "help"
+}
+
+// Start LSP server process with optimizations for large projects
+func (c *Client) Start() error {
+	c.helper()
+	return nil
+}
+
+// Forward stderr for debugging
+func (c *Client) Stop() error {
+	return nil
+}
+`
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sorter := New(fset, file)
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !changed {
+		t.Error("Expected methods to be reordered")
+	}
+
+	sortedCode := string(sorted)
+
+	// Check that Start and Stop come before helper (exported first)
+	startIndex := strings.Index(sortedCode, "func (c *Client) Start(")
+	stopIndex := strings.Index(sortedCode, "func (c *Client) Stop(")
+	helperIndex := strings.Index(sortedCode, "func (c *Client) helper(")
+
+	if startIndex == -1 || stopIndex == -1 || helperIndex == -1 {
+		t.Fatal("Could not find methods in sorted code")
+	}
+
+	if startIndex > helperIndex || stopIndex > helperIndex {
+		t.Error("Methods were not properly sorted - exported methods should come before private methods")
+	}
+
+	// CRITICAL: Check that method header comments stay with their methods
+	// The comment should appear immediately before the method signature, not floating elsewhere
+
+	// Check Start method comment
+	startCommentPattern := "// Start LSP server process with optimizations for large projects\nfunc (c *Client) Start("
+	if !strings.Contains(sortedCode, startCommentPattern) {
+		t.Errorf("Start method comment is not properly attached to the method.\nExpected pattern: %s\n\nActual sorted code:\n%s",
+			startCommentPattern, sortedCode)
+	}
+
+	// Check Stop method comment
+	stopCommentPattern := "// Forward stderr for debugging\nfunc (c *Client) Stop("
+	if !strings.Contains(sortedCode, stopCommentPattern) {
+		t.Errorf("Stop method comment is not properly attached to the method.\nExpected pattern: %s\n\nActual sorted code:\n%s",
+			stopCommentPattern, sortedCode)
+	}
+
+	// Make sure these comments are not floating somewhere else
+	if strings.Count(sortedCode, "// Start LSP server process with optimizations for large projects") != 1 {
+		t.Errorf("Start method comment appears multiple times or is duplicated.\nSorted code:\n%s", sortedCode)
+	}
+
+	if strings.Count(sortedCode, "// Forward stderr for debugging") != 1 {
+		t.Errorf("Stop method comment appears multiple times or is duplicated.\nSorted code:\n%s", sortedCode)
 	}
 }

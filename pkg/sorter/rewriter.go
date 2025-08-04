@@ -48,7 +48,7 @@ func (s *Sorter) formatFile(file *ast.File) ([]byte, error) {
 	if err := format.Node(&buf, s.fset, file); err != nil {
 		return nil, err
 	}
-	
+
 	// Post-process to ensure blank lines between method declarations
 	content := buf.String()
 	return s.ensureBlankLinesBetweenMethods(content), nil
@@ -57,17 +57,17 @@ func (s *Sorter) formatFile(file *ast.File) ([]byte, error) {
 // ensureBlankLinesBetweenMethods adds blank lines between consecutive method declarations
 func (s *Sorter) ensureBlankLinesBetweenMethods(content string) []byte {
 	lines := strings.Split(content, "\n")
-	var result []string
-	
+	result := make([]string, 0, len(lines)+10) // Pre-allocate with some extra capacity for blank lines
+
 	for i, line := range lines {
 		result = append(result, line)
-		
+
 		// Check if this line contains a method ending (closing brace)
 		// and the next line contains a method start
 		if i < len(lines)-1 {
 			currentTrimmed := strings.TrimSpace(line)
 			nextTrimmed := strings.TrimSpace(lines[i+1])
-			
+
 			// If current line is a closing brace and next line starts a function
 			if currentTrimmed == "}" && strings.HasPrefix(nextTrimmed, "func ") {
 				// Add a blank line between methods
@@ -75,7 +75,7 @@ func (s *Sorter) ensureBlankLinesBetweenMethods(content string) []byte {
 			}
 		}
 	}
-	
+
 	return []byte(strings.Join(result, "\n"))
 }
 
@@ -99,7 +99,7 @@ func (s *Sorter) reorderMethods(sortedMethods []*MethodInfo) *ast.File {
 		Name:     s.file.Name,
 		Doc:      s.file.Doc,
 		Package:  s.file.Package,
-		Comments: s.file.Comments,
+		Comments: s.filterGlobalComments(), // Remove method comments that are already Doc comments
 		Imports:  s.file.Imports,
 		Scope:    s.file.Scope,
 	}
@@ -119,13 +119,36 @@ func (s *Sorter) reorderMethods(sortedMethods []*MethodInfo) *ast.File {
 		newDecls = append(newDecls, decl)
 	}
 
-	// Add methods in sorted order
+	// Add methods in sorted order - their Doc comments will move with them
 	for _, method := range sortedMethods {
 		newDecls = append(newDecls, method.FuncDecl)
 	}
 
 	newFile.Decls = newDecls
 	return newFile
+}
+
+// filterGlobalComments removes comments that are already associated with method Doc fields
+// to prevent duplicate comments in the output
+func (s *Sorter) filterGlobalComments() []*ast.CommentGroup {
+	// Collect all Doc comments from method declarations
+	docComments := make(map[*ast.CommentGroup]bool)
+
+	for _, decl := range s.file.Decls {
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok && funcDecl.Recv != nil && funcDecl.Doc != nil {
+			docComments[funcDecl.Doc] = true
+		}
+	}
+
+	// Filter out global comments that are already Doc comments
+	var filteredComments []*ast.CommentGroup
+	for _, comment := range s.file.Comments {
+		if !docComments[comment] {
+			filteredComments = append(filteredComments, comment)
+		}
+	}
+
+	return filteredComments
 }
 
 func WriteFile(filename string, content []byte) error {
