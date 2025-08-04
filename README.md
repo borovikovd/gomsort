@@ -1,8 +1,8 @@
-# go-msort
+# gomsort
 
-[![CI](https://github.com/borovikovd/go-msort/actions/workflows/ci.yml/badge.svg)](https://github.com/borovikovd/go-msort/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/borovikovd/go-msort)](https://goreportcard.com/report/github.com/borovikovd/go-msort)
-[![codecov](https://codecov.io/gh/borovikovd/go-msort/branch/main/graph/badge.svg)](https://codecov.io/gh/borovikovd/go-msort)
+[![CI](https://github.com/borovikovd/gomsort/actions/workflows/ci.yml/badge.svg)](https://github.com/borovikovd/gomsort/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/borovikovd/gomsort)](https://goreportcard.com/report/github.com/borovikovd/gomsort)
+[![codecov](https://codecov.io/gh/borovikovd/gomsort/branch/main/graph/badge.svg)](https://codecov.io/gh/borovikovd/gomsort)
 
 A Go tool that sorts methods within types for better code readability. The tool analyzes call graphs and method usage patterns to optimize method ordering.
 
@@ -33,16 +33,16 @@ This means:
 
 ### Using go install (recommended)
 ```bash
-go install github.com/borovikovd/go-msort@latest
+go install github.com/borovikovd/gomsort@latest
 ```
 
 ### Download pre-built binaries
-Download from the [releases page](https://github.com/borovikovd/go-msort/releases).
+Download from the [releases page](https://github.com/borovikovd/gomsort/releases).
 
 ### Build from source
 ```bash
-git clone https://github.com/borovikovd/go-msort.git
-cd go-msort
+git clone https://github.com/borovikovd/gomsort.git
+cd gomsort
 make build
 ```
 
@@ -52,19 +52,19 @@ make build
 
 ```bash
 # Sort methods in a single file
-go-msort file.go
+gomsort file.go
 
 # Sort methods in all Go files in current directory (recursive by default)
-go-msort .
+gomsort .
 
 # Sort methods in a specific directory tree
-go-msort ./src/
+gomsort ./src/
 
 # Dry run to see what would be changed
-go-msort -n file.go
+gomsort -n file.go
 
 # Verbose output
-go-msort -v file.go
+gomsort -v file.go
 ```
 
 ### Options
@@ -72,7 +72,7 @@ go-msort -v file.go
 - `-n`: Dry run - show what would be changed without modifying files
 - `-v`: Verbose output
 
-**Note**: Like `go fmt`, go-msort processes directories recursively by default.
+**Note**: Like `go fmt`, gomsort processes directories recursively by default.
 
 ### Integration with golangci-lint
 
