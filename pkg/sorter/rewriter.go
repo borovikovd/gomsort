@@ -6,6 +6,7 @@ import (
 	"go/format"
 	"go/token"
 	"os"
+	"strings"
 )
 
 type Sorter struct {
@@ -47,7 +48,35 @@ func (s *Sorter) formatFile(file *ast.File) ([]byte, error) {
 	if err := format.Node(&buf, s.fset, file); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	
+	// Post-process to ensure blank lines between method declarations
+	content := buf.String()
+	return s.ensureBlankLinesBetweenMethods(content), nil
+}
+
+// ensureBlankLinesBetweenMethods adds blank lines between consecutive method declarations
+func (s *Sorter) ensureBlankLinesBetweenMethods(content string) []byte {
+	lines := strings.Split(content, "\n")
+	var result []string
+	
+	for i, line := range lines {
+		result = append(result, line)
+		
+		// Check if this line contains a method ending (closing brace)
+		// and the next line contains a method start
+		if i < len(lines)-1 {
+			currentTrimmed := strings.TrimSpace(line)
+			nextTrimmed := strings.TrimSpace(lines[i+1])
+			
+			// If current line is a closing brace and next line starts a function
+			if currentTrimmed == "}" && strings.HasPrefix(nextTrimmed, "func ") {
+				// Add a blank line between methods
+				result = append(result, "")
+			}
+		}
+	}
+	
+	return []byte(strings.Join(result, "\n"))
 }
 
 func (s *Sorter) hasOrderChanged(original, sorted []*MethodInfo) bool {

@@ -456,3 +456,92 @@ func (d *Database) Connect() error {
 		t.Errorf("Sorted code has syntax errors: %v\nSorted code:\n%s", err, sortedCode)
 	}
 }
+
+func TestSorterPreservesBlankLinesBetweenMethods(t *testing.T) {
+	source := `package test
+
+type Server struct{}
+
+func (s *Server) helper() string {
+	return "help"
+}
+
+func (s *Server) Start() error {
+	s.helper()
+	return nil
+}
+`
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sorter := New(fset, file)
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !changed {
+		t.Error("Expected methods to be reordered")
+	}
+
+	sortedCode := string(sorted)
+
+	// Check that Start comes before helper (exported first)
+	startIndex := strings.Index(sortedCode, "func (s *Server) Start(")
+	helperIndex := strings.Index(sortedCode, "func (s *Server) helper(")
+
+	if startIndex == -1 || helperIndex == -1 {
+		t.Fatal("Could not find methods in sorted code")
+	}
+
+	if startIndex > helperIndex {
+		t.Error("Methods were not properly sorted - Start should come before helper")
+	}
+
+	// CRITICAL: Check that there's a blank line between methods
+	// Find the end of Start method and start of helper method
+	lines := strings.Split(sortedCode, "\n")
+	var startEndLine, helperStartLine int
+
+	for i, line := range lines {
+		if strings.Contains(line, "func (s *Server) Start(") {
+			// Find the closing brace of this method
+			braceCount := 0
+			for j := i; j < len(lines); j++ {
+				for _, char := range lines[j] {
+					if char == '{' {
+						braceCount++
+					} else if char == '}' {
+						braceCount--
+						if braceCount == 0 {
+							startEndLine = j
+							break
+						}
+					}
+				}
+				if braceCount == 0 {
+					break
+				}
+			}
+		}
+		if strings.Contains(line, "func (s *Server) helper(") {
+			helperStartLine = i
+		}
+	}
+
+	// There should be exactly one blank line between the methods
+	if helperStartLine-startEndLine != 2 {
+		t.Errorf("Expected exactly one blank line between methods, but found %d lines between them.\nSorted code:\n%s", 
+			helperStartLine-startEndLine-1, sortedCode)
+	}
+
+	// Verify there's actually a blank line
+	if startEndLine+1 < len(lines) && strings.TrimSpace(lines[startEndLine+1]) != "" {
+		t.Errorf("Expected blank line after Start method, but found: '%s'\nSorted code:\n%s", 
+			lines[startEndLine+1], sortedCode)
+	}
+}
