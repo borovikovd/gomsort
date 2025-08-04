@@ -118,9 +118,9 @@ func TestMainBinaryHelp(t *testing.T) {
 	expectedHelpTexts := []string{
 		"Usage:",
 		"go-msort sorts Go methods",
+		"Recursively processes directories like 'go fmt'",
 		"Options:",
 		"-n",
-		"-r",
 		"-v",
 	}
 
