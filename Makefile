@@ -1,5 +1,5 @@
 # Variables
-BINARY_NAME := go-msort
+BINARY_NAME := gomsort
 GO_VERSION := 1.24.5
 GOLANGCI_LINT_VERSION := v1.64.8
 
@@ -99,4 +99,4 @@ help:
 	@echo "  ci                 - CI workflow (fmt-check + lint + test)"
 	@echo "  help               - Show this help message"
 	@echo ""
-	@echo "Note: go-msort processes directories recursively by default (like go fmt)"
+	@echo "Note: gomsort processes directories recursively by default (like go fmt)"

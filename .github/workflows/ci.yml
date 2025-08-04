@@ -87,8 +87,8 @@ jobs:
 
     - name: Test binary execution
       run: |
-        ./go-msort -h || true  # Help exits with non-zero
-        ./go-msort -n testdata/ || echo "Expected failure with testdata"
+        ./gomsort -h || true  # Help exits with non-zero
+        ./gomsort -n testdata/ || echo "Expected failure with testdata"
 
   integration-test:
     name: Integration Test
@@ -116,10 +116,10 @@ jobs:
         func (s *Server) Start() error { return nil }' > test_integration.go
         
         # Test dry run
-        ./go-msort -n test_integration.go
+        ./gomsort -n test_integration.go
         
         # Test actual sorting (recursive by default)
-        ./go-msort -v test_integration.go
+        ./gomsort -v test_integration.go
         
         # Verify file was modified
         if grep -q "Start()" test_integration.go && grep -q "helper()" test_integration.go; then

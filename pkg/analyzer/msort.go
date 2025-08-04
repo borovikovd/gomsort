@@ -7,7 +7,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 
-	"github.com/borovikovd/go-msort/pkg/sorter"
+	"github.com/borovikovd/gomsort/pkg/sorter"
 )
 
 var Analyzer = &analysis.Analyzer{

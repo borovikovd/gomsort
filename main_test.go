@@ -11,7 +11,7 @@ import (
 func TestMainBinary(t *testing.T) {
 	// Build the binary for testing
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "go-msort")
+	binaryPath := filepath.Join(tmpDir, "gomsort")
 
 	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
 	if err := cmd.Run(); err != nil {
@@ -62,7 +62,7 @@ func (s *Server) Start() error { return nil }
 func TestMainBinaryWithVerbose(t *testing.T) {
 	// Build the binary for testing
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "go-msort")
+	binaryPath := filepath.Join(tmpDir, "gomsort")
 
 	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
 	if err := cmd.Run(); err != nil {
@@ -100,7 +100,7 @@ func (s *Server) Start() error { return nil }
 func TestMainBinaryHelp(t *testing.T) {
 	// Build the binary for testing
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "go-msort")
+	binaryPath := filepath.Join(tmpDir, "gomsort")
 
 	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
 	if err := cmd.Run(); err != nil {
@@ -134,7 +134,7 @@ func TestMainBinaryHelp(t *testing.T) {
 func TestMainBinaryWithNonExistentFile(t *testing.T) {
 	// Build the binary for testing
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "go-msort")
+	binaryPath := filepath.Join(tmpDir, "gomsort")
 
 	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
 	if err := cmd.Run(); err != nil {

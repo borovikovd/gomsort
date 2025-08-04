@@ -28,19 +28,19 @@ jobs:
     - name: Build for multiple platforms
       run: |
         # Linux AMD64
-        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/go-msort-linux-amd64 .
+        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/gomsort-linux-amd64 .
         
         # Linux ARM64
-        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/go-msort-linux-arm64 .
+        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/gomsort-linux-arm64 .
         
         # macOS AMD64
-        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/go-msort-darwin-amd64 .
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/gomsort-darwin-amd64 .
         
         # macOS ARM64 (Apple Silicon)
-        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/go-msort-darwin-arm64 .
+        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/gomsort-darwin-arm64 .
         
         # Windows AMD64
-        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/go-msort-windows-amd64.exe .
+        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/gomsort-windows-amd64.exe .
 
     - name: Create checksums
       run: |
@@ -51,18 +51,18 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/go-msort-linux-amd64
-          dist/go-msort-linux-arm64
-          dist/go-msort-darwin-amd64
-          dist/go-msort-darwin-arm64
-          dist/go-msort-windows-amd64.exe
+          dist/gomsort-linux-amd64
+          dist/gomsort-linux-arm64
+          dist/gomsort-darwin-amd64
+          dist/gomsort-darwin-arm64
+          dist/gomsort-windows-amd64.exe
           dist/checksums.txt
         body: |
           ## Installation
 
           ### Using go install
           ```bash
-          go install github.com/borovikovd/go-msort@${{ github.ref_name }}
+          go install github.com/borovikovd/gomsort@${{ github.ref_name }}
           ```
 
           ### Manual Installation
@@ -71,16 +71,16 @@ jobs:
           ### Usage
           ```bash
           # Sort methods in a single file
-          go-msort file.go
+          gomsort file.go
 
           # Sort methods in all Go files in a directory (recursive by default)
-          go-msort ./src/
+          gomsort ./src/
 
           # Dry run to see what would be changed
-          go-msort -n file.go
+          gomsort -n file.go
 
           # Verbose output
-          go-msort -v file.go
+          gomsort -v file.go
           ```
 
           ## What's Changed

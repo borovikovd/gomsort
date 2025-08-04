@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/borovikovd/go-msort/cmd"
+	"github.com/borovikovd/gomsort/cmd"
 )
 
 func main() {

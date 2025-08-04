@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/borovikovd/go-msort/pkg/sorter"
+	"github.com/borovikovd/gomsort/pkg/sorter"
 )
 
 type Config struct {
