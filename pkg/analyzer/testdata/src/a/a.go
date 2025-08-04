@@ -12,4 +12,4 @@ func (s *Server) helper() string {
 }
 
 // want "methods in this file could be better sorted for readability"
-// Methods are in wrong order - helper before entry points
+// Methods are in correct order - entry points before helpers
