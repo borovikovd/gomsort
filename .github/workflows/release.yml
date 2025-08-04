@@ -73,8 +73,8 @@ jobs:
           # Sort methods in a single file
           go-msort file.go
 
-          # Sort methods in all Go files in a directory
-          go-msort -r ./src/
+          # Sort methods in all Go files in a directory (recursive by default)
+          go-msort ./src/
 
           # Dry run to see what would be changed
           go-msort -n file.go
