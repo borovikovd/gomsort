@@ -106,27 +106,6 @@ func (cg *CallGraph) CalculateMetrics() {
 	}
 }
 
-func (cg *CallGraph) calculateMaxDepth(methodKey string, visited map[string]bool) int {
-	if visited[methodKey] {
-		return 0
-	}
-
-	visited[methodKey] = true
-	maxDepth := 0
-
-	if calls, exists := cg.calls[methodKey]; exists {
-		for _, calledMethod := range calls {
-			depth := cg.calculateMaxDepth(calledMethod, visited)
-			if depth+1 > maxDepth {
-				maxDepth = depth + 1
-			}
-		}
-	}
-
-	delete(visited, methodKey)
-	return maxDepth
-}
-
 func (cg *CallGraph) GetMethods() []*MethodInfo {
 	methods := make([]*MethodInfo, 0, len(cg.methods))
 
@@ -148,6 +127,27 @@ func (cg *CallGraph) GetMethods() []*MethodInfo {
 	})
 
 	return methods
+}
+
+func (cg *CallGraph) calculateMaxDepth(methodKey string, visited map[string]bool) int {
+	if visited[methodKey] {
+		return 0
+	}
+
+	visited[methodKey] = true
+	maxDepth := 0
+
+	if calls, exists := cg.calls[methodKey]; exists {
+		for _, calledMethod := range calls {
+			depth := cg.calculateMaxDepth(calledMethod, visited)
+			if depth+1 > maxDepth {
+				maxDepth = depth + 1
+			}
+		}
+	}
+
+	delete(visited, methodKey)
+	return maxDepth
 }
 
 func (v *callVisitor) Visit(node dst.Node) dst.Visitor {
