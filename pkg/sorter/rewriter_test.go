@@ -35,13 +35,10 @@ func (s *Server) connect() error {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, changed, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -93,13 +90,10 @@ func (s *Server) connect() error {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, _, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -125,13 +119,10 @@ func (s *Server) Start() error { return nil }
 func (c *Client) disconnect() {}
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, changed, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -189,13 +180,10 @@ func (s *Server) helper() {}
 var GlobalVar = "value"
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, _, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -245,13 +233,10 @@ func (r *Row) helper() string {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, _, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -342,13 +327,10 @@ func (d *Database) Connect() error {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, _, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -387,13 +369,10 @@ func (s *Server) Start() error {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, changed, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -492,13 +471,10 @@ func (c *Client) initializeProcess(config interface{}) error {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, changed, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -612,13 +588,10 @@ func (m *Manager) helper() {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, changed, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)
@@ -733,13 +706,10 @@ func (c *Client) Stop() error {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, parser.ParseComments)
+	sorter, err := NewFromSource(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sorter := New(fset, file)
 	sorted, changed, err := sorter.Sort()
 	if err != nil {
 		t.Fatal(err)

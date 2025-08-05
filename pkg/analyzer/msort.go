@@ -1,7 +1,9 @@
 package analyzer
 
 import (
+	"bytes"
 	"go/ast"
+	"go/format"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -33,8 +35,17 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		fset := pass.Fset
-		methodSorter := sorter.New(fset, file)
+		// Convert AST to source code
+		var buf bytes.Buffer
+		if err := format.Node(&buf, pass.Fset, file); err != nil {
+			return
+		}
+
+		// Use DST-based sorter
+		methodSorter, err := sorter.NewFromSource(buf.String())
+		if err != nil {
+			return
+		}
 
 		_, changed, err := methodSorter.Sort()
 		if err != nil {

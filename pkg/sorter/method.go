@@ -1,9 +1,9 @@
 package sorter
 
 import (
-	"go/ast"
-	"go/token"
 	"strings"
+
+	"github.com/dave/dst"
 )
 
 type MethodInfo struct {
@@ -11,8 +11,8 @@ type MethodInfo struct {
 	ReceiverName string
 	ReceiverType string
 	IsExported   bool
-	FuncDecl     *ast.FuncDecl
-	Position     token.Pos
+	FuncDecl     *dst.FuncDecl
+	Position     int
 	InDegree     int
 	MaxDepth     int
 }
@@ -22,7 +22,7 @@ type MethodSortKey struct {
 	IsExported   bool
 	InDegree     int
 	MaxDepth     int
-	OriginalPos  token.Pos
+	OriginalPos  int
 }
 
 func (m *MethodInfo) SortKey() MethodSortKey {
@@ -35,26 +35,26 @@ func (m *MethodInfo) SortKey() MethodSortKey {
 	}
 }
 
-func extractMethodInfo(decl *ast.FuncDecl) *MethodInfo {
+func extractMethodInfo(decl *dst.FuncDecl, position int) *MethodInfo {
 	if decl.Recv == nil || len(decl.Recv.List) == 0 {
 		return nil
 	}
 
 	method := &MethodInfo{
 		Name:       decl.Name.Name,
-		IsExported: ast.IsExported(decl.Name.Name),
+		IsExported: isExported(decl.Name.Name),
 		FuncDecl:   decl,
-		Position:   decl.Pos(),
+		Position:   position,
 	}
 
 	recv := decl.Recv.List[0]
 
 	switch recvType := recv.Type.(type) {
-	case *ast.Ident:
+	case *dst.Ident:
 		method.ReceiverType = recvType.Name
 		method.ReceiverName = recvType.Name
-	case *ast.StarExpr:
-		if ident, ok := recvType.X.(*ast.Ident); ok {
+	case *dst.StarExpr:
+		if ident, ok := recvType.X.(*dst.Ident); ok {
 			method.ReceiverType = "*" + ident.Name
 			method.ReceiverName = ident.Name
 		}
@@ -63,11 +63,16 @@ func extractMethodInfo(decl *ast.FuncDecl) *MethodInfo {
 	return method
 }
 
+// Helper function since DST doesn't have ast.IsExported
+func isExported(name string) bool {
+	return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
+}
+
 func sortMethods(methods []*MethodInfo) []*MethodInfo {
 	sorted := make([]*MethodInfo, len(methods))
 	copy(sorted, methods)
 
-	// Use a proper sort implementation
+	// Use bubble sort for consistency with existing implementation
 	for i := 0; i < len(sorted)-1; i++ {
 		for j := 0; j < len(sorted)-i-1; j++ {
 			if shouldSwap(sorted[j], sorted[j+1]) {

@@ -1,9 +1,9 @@
 package sorter
 
 import (
-	"go/parser"
-	"go/token"
 	"testing"
+
+	"github.com/dave/dst/decorator"
 )
 
 func TestCallGraphBuilding(t *testing.T) {
@@ -36,8 +36,7 @@ func (s *Server) Status() string {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	file, err := decorator.Parse(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,8 +106,7 @@ func (s *Server) listen() error {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	file, err := decorator.Parse(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,8 +154,7 @@ func (s *Server) methodB() error {
 }
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	file, err := decorator.Parse(source)
 	if err != nil {
 		t.Fatal(err)
 	}

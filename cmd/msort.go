@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,13 +98,16 @@ func processFile(filename string, config *Config) error {
 		fmt.Printf("Processing: %s\n", filename)
 	}
 
-	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
+	// Read source file
+	source, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", filename, err)
+	}
+
+	methodSorter, err := sorter.NewFromSource(string(source))
 	if err != nil {
 		return fmt.Errorf("parsing %s: %w", filename, err)
 	}
-
-	methodSorter := sorter.New(fset, node)
 	sorted, changed, err := methodSorter.Sort()
 	if err != nil {
 		return fmt.Errorf("sorting methods in %s: %w", filename, err)

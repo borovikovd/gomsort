@@ -1,10 +1,10 @@
 package sorter
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"testing"
+
+	"github.com/dave/dst"
+	"github.com/dave/dst/decorator"
 )
 
 func TestMethodSortKey(t *testing.T) {
@@ -21,14 +21,14 @@ func TestMethodSortKey(t *testing.T) {
 				IsExported:   true,
 				InDegree:     0,
 				MaxDepth:     1,
-				Position:     token.Pos(100),
+				Position:     100,
 			},
 			expected: MethodSortKey{
 				ReceiverName: "Database",
 				IsExported:   true,
 				InDegree:     0,
 				MaxDepth:     1,
-				OriginalPos:  token.Pos(100),
+				OriginalPos:  100,
 			},
 		},
 		{
@@ -39,14 +39,14 @@ func TestMethodSortKey(t *testing.T) {
 				IsExported:   false,
 				InDegree:     3,
 				MaxDepth:     0,
-				Position:     token.Pos(200),
+				Position:     200,
 			},
 			expected: MethodSortKey{
 				ReceiverName: "Database",
 				IsExported:   false,
 				InDegree:     3,
 				MaxDepth:     0,
-				OriginalPos:  token.Pos(200),
+				OriginalPos:  200,
 			},
 		},
 	}
@@ -73,17 +73,18 @@ func (s Server) ValueReceiver() {}
 func NotAMethod() {}
 `
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	file, err := decorator.Parse(source)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var methods []*MethodInfo
+	position := 0
 	for _, decl := range file.Decls {
-		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
-			if method := extractMethodInfo(funcDecl); method != nil {
+		if funcDecl, ok := decl.(*dst.FuncDecl); ok {
+			if method := extractMethodInfo(funcDecl, position); method != nil {
 				methods = append(methods, method)
+				position++
 			}
 		}
 	}
