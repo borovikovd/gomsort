@@ -577,3 +577,46 @@ func TestProcessDirectoryReadError(t *testing.T) {
 		t.Error("Expected error when processing non-existent directory")
 	}
 }
+
+func TestProcessDirectoryRecursiveError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create go.mod file
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a subdirectory
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a nested directory that will cause recursion
+	nestedDir := filepath.Join(subDir, "nested")
+	if err := os.Mkdir(nestedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a file that will cause a parsing error
+	invalidFile := filepath.Join(nestedDir, "invalid.go")
+	invalidContent := `package test
+func (s *Server incomplete syntax`
+	if err := os.WriteFile(invalidFile, []byte(invalidContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config := &Config{
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{tmpDir},
+	}
+
+	err := Run(config)
+	if err == nil {
+		t.Error("Expected error from recursive directory processing")
+	}
+}

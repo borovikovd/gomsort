@@ -248,3 +248,27 @@ func TestLoadConfigWithEmptyPath(t *testing.T) {
 		t.Error("Expected default config with empty path")
 	}
 }
+
+func TestFindConfigFileWithPermissionError(t *testing.T) {
+	originalWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(originalWd)
+
+	tmpDir := t.TempDir()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+
+	// Create a config file
+	configFile := ".msort.json"
+	if err := os.WriteFile(configFile, []byte("{}"), 0644); err != nil {
+		t.Fatalf("Failed to create config file: %v", err)
+	}
+
+	result := findConfigFile()
+	if result != configFile {
+		t.Errorf("Expected to find %s, got %s", configFile, result)
+	}
+}
