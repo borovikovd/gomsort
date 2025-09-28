@@ -20,6 +20,10 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	if pass == nil {
+		return nil, nil
+	}
+
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
 		return nil, nil

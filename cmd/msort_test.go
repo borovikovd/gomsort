@@ -302,3 +302,188 @@ func (s *Server invalid syntax here
 		t.Error("Expected error for invalid Go file")
 	}
 }
+
+func TestProcessPathWithNonGoFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	err := os.WriteFile(testFile, []byte("not go content"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := &Config{
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{testFile},
+	}
+
+	// Should not error but also should not process
+	err = Run(config)
+	if err != nil {
+		t.Errorf("Run() with non-Go file should not error: %v", err)
+	}
+}
+
+func TestProcessPathWithTestFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test_test.go")
+
+	testContent := `package test
+func TestSomething(t *testing.T) {}
+`
+
+	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := &Config{
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{testFile},
+	}
+
+	// Should not error but also should not process test files
+	err = Run(config)
+	if err != nil {
+		t.Errorf("Run() with test file should not error: %v", err)
+	}
+
+	// Verify file wasn't modified
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(content) != testContent {
+		t.Error("Test file should not be modified")
+	}
+}
+
+func TestCheckGoModuleWithoutGoMod(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	config := &Config{
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{tmpDir},
+	}
+
+	err := Run(config)
+	if err == nil {
+		t.Error("Expected error when no go.mod found")
+	}
+
+	expectedErrMsg := "go.mod file not found"
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf("Expected error about go.mod, got: %v", err)
+	}
+}
+
+func TestProcessDirectoryWithHiddenDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create go.mod file
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create hidden directory
+	hiddenDir := filepath.Join(tmpDir, ".hidden")
+	err := os.Mkdir(hiddenDir, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a Go file in the hidden directory
+	hiddenFile := filepath.Join(hiddenDir, "hidden.go")
+	hiddenContent := `package hidden
+type Server struct{}
+func (s *Server) helper() {}
+func (s *Server) Start() error { return nil }
+`
+	err = os.WriteFile(hiddenFile, []byte(hiddenContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := &Config{
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{tmpDir},
+	}
+
+	err = Run(config)
+	if err != nil {
+		t.Errorf("Run() should not error with hidden directories: %v", err)
+	}
+
+	// Verify hidden file was not modified
+	content, err := os.ReadFile(hiddenFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(content) != hiddenContent {
+		t.Error("Files in hidden directories should not be processed")
+	}
+}
+
+func TestProcessFileWithVerboseNoChanges(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "sorted.go")
+
+	// Create go.mod file
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create already sorted content
+	sortedContent := `package test
+
+type Server struct{}
+
+// Start is the entry point
+func (s *Server) Start() error {
+	return s.helper()
+}
+
+// helper is a private helper
+func (s *Server) helper() error {
+	return nil
+}
+`
+
+	err := os.WriteFile(testFile, []byte(sortedContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := &Config{
+		DryRun:  false,
+		Verbose: true,
+		Paths:   []string{testFile},
+	}
+
+	err = Run(config)
+	if err != nil {
+		t.Errorf("Run() failed: %v", err)
+	}
+
+	// Verify file wasn't modified since it was already sorted
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(content) != sortedContent {
+		t.Error("Already sorted file should not be modified")
+	}
+}

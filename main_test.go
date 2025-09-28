@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,10 +42,7 @@ func (s *Server) Start() error { return nil }
 	}
 
 	outputStr := string(output)
-	// Note: dry run may not show output if no changes are needed
 	if len(outputStr) == 0 {
-		// This is acceptable - no changes may be needed
-		t.Logf("No output from dry run - file may already be sorted")
 	} else if !strings.Contains(outputStr, "Would sort methods in:") {
 		t.Errorf("Expected dry run output, got: %s", outputStr)
 	}
@@ -111,9 +109,6 @@ func TestMainBinaryHelp(t *testing.T) {
 	cmd = exec.Command(binaryPath, "-h")
 	output, _ := cmd.CombinedOutput()
 
-	// Help should exit with code 2 (standard for flag package)
-	// We expect this to fail, so err != nil is expected
-
 	outputStr := string(output)
 	expectedHelpTexts := []string{
 		"Usage:",
@@ -153,5 +148,67 @@ func TestMainBinaryWithNonExistentFile(t *testing.T) {
 	outputStr := string(output)
 	if len(outputStr) == 0 {
 		t.Error("Expected error message for non-existent file")
+	}
+}
+
+func TestMainFlagParsing(t *testing.T) {
+	// Test default values
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	// Reset flag state
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	// Test with default arguments (current directory)
+	os.Args = []string{"gomsort"}
+
+	var dryRun = flag.Bool("n", false, "dry run - show what would be changed without modifying files")
+	var verbose = flag.Bool("v", false, "verbose output")
+
+	flag.Parse()
+	args := flag.Args()
+
+	if *dryRun {
+		t.Error("Expected dryRun to be false by default")
+	}
+	if *verbose {
+		t.Error("Expected verbose to be false by default")
+	}
+	if len(args) != 0 {
+		t.Errorf("Expected no args, got %v", args)
+	}
+}
+
+func TestMainFlagParsingWithFlags(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	// Reset flag state
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	// Test with flags
+	os.Args = []string{"gomsort", "-n", "-v", "file1.go", "file2.go"}
+
+	var dryRun = flag.Bool("n", false, "dry run - show what would be changed without modifying files")
+	var verbose = flag.Bool("v", false, "verbose output")
+
+	flag.Parse()
+	args := flag.Args()
+
+	if !*dryRun {
+		t.Error("Expected dryRun to be true")
+	}
+	if !*verbose {
+		t.Error("Expected verbose to be true")
+	}
+
+	expectedArgs := []string{"file1.go", "file2.go"}
+	if len(args) != len(expectedArgs) {
+		t.Errorf("Expected %d args, got %d", len(expectedArgs), len(args))
+	}
+	for i, expected := range expectedArgs {
+		if i >= len(args) || args[i] != expected {
+			t.Errorf("Expected arg %d to be %s, got %s", i, expected, args[i])
+		}
 	}
 }
