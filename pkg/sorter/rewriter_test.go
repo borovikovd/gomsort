@@ -3,6 +3,7 @@ package sorter
 import (
 	"go/parser"
 	"go/token"
+	"os"
 	"strings"
 	"testing"
 )
@@ -758,5 +759,69 @@ func (c *Client) Stop() error {
 
 	if strings.Count(sortedCode, "// Forward stderr for debugging") != 1 {
 		t.Errorf("Stop method comment appears multiple times or is duplicated.\nSorted code:\n%s", sortedCode)
+	}
+}
+
+func TestWriteFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := tmpDir + "/test.go"
+	content := []byte("package test\n\nfunc Test() {}\n")
+
+	err := WriteFile(testFile, content)
+	if err != nil {
+		t.Errorf("WriteFile failed: %v", err)
+	}
+
+	written, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(written) != string(content) {
+		t.Errorf("File content mismatch.\nExpected: %s\nGot: %s", string(content), string(written))
+	}
+}
+
+func TestWriteFileError(t *testing.T) {
+	err := WriteFile("/invalid/path/that/does/not/exist/test.go", []byte("test"))
+	if err == nil {
+		t.Error("Expected error when writing to invalid path")
+	}
+}
+
+func TestNewFromSourceWithInvalidSyntax(t *testing.T) {
+	invalidSource := `package test
+func invalid syntax here`
+
+	_, err := NewFromSource(invalidSource)
+	if err == nil {
+		t.Error("Expected error for invalid Go syntax")
+	}
+}
+
+func TestSortWithSingleMethod(t *testing.T) {
+	source := `package test
+
+type Server struct{}
+
+func (s *Server) Start() error {
+	return nil
+}
+`
+
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, changed, err := sorter.Sort()
+	if err != nil {
+		t.Errorf("Unexpected error in Sort: %v", err)
+	}
+	if changed {
+		t.Error("Expected no changes for single method")
+	}
+	if len(result) == 0 {
+		t.Error("Expected non-empty result")
 	}
 }

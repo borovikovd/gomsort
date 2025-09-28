@@ -487,3 +487,93 @@ func (s *Server) helper() error {
 		t.Error("Already sorted file should not be modified")
 	}
 }
+
+func TestProcessDirectoryWithNestedDirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	level1Dir := filepath.Join(tmpDir, "level1")
+	level2Dir := filepath.Join(level1Dir, "level2")
+
+	if err := os.MkdirAll(level2Dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	testContent := `package test
+
+type Server struct{}
+
+func (s *Server) helper() error {
+	return nil
+}
+
+func (s *Server) Start() error {
+	return s.helper()
+}
+`
+
+	rootFile := filepath.Join(tmpDir, "root.go")
+	if err := os.WriteFile(rootFile, []byte(testContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	level1File := filepath.Join(level1Dir, "level1.go")
+	if err := os.WriteFile(level1File, []byte(testContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	level2File := filepath.Join(level2Dir, "level2.go")
+	if err := os.WriteFile(level2File, []byte(testContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config := &Config{
+		DryRun:  false,
+		Verbose: true,
+		Paths:   []string{tmpDir},
+	}
+
+	err := Run(config)
+	if err != nil {
+		t.Errorf("Run() failed: %v", err)
+	}
+
+	filesToCheck := []string{rootFile, level1File, level2File}
+	for _, file := range filesToCheck {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		modifiedContent := string(content)
+		startIndex := strings.Index(modifiedContent, "func (s *Server) Start()")
+		helperIndex := strings.Index(modifiedContent, "func (s *Server) helper()")
+
+		if startIndex == -1 || helperIndex == -1 {
+			t.Fatalf("Could not find methods in file %s", file)
+		}
+
+		if startIndex > helperIndex {
+			t.Errorf("Methods were not properly sorted in file %s", file)
+		}
+	}
+}
+
+func TestProcessDirectoryReadError(t *testing.T) {
+	config := &Config{
+		DryRun:  false,
+		Verbose: false,
+		Paths:   []string{"/non/existent/directory/that/should/not/exist"},
+	}
+
+	err := Run(config)
+	if err == nil {
+		t.Error("Expected error when processing non-existent directory")
+	}
+}
