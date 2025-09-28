@@ -129,16 +129,18 @@ func globalFunction() {
 		Files: files,
 	}
 
-	defer func() {
-		recover()
-	}()
-
 	result, err := run(pass)
-	_ = result
-	_ = err
+	if err != nil {
+		t.Errorf("Expected no error with file containing no methods, got %v", err)
+	}
+	if result != nil {
+		t.Error("Expected nil result from run function")
+	}
 }
 
 func TestRunWithUnsortedMethods(t *testing.T) {
+	// This test verifies that the analyzer correctly detects when methods need sorting
+	// helper() should come after Start() because Start() is exported and calls helper()
 	source := `package test
 
 type Server struct{}
@@ -161,6 +163,7 @@ func (s *Server) Start() error {
 	files := []*ast.File{file}
 	inspectResult := inspector.New(files)
 
+	panicked := false
 	pass := &analysis.Pass{
 		ResultOf: map[*analysis.Analyzer]interface{}{
 			inspect.Analyzer: inspectResult,
@@ -170,7 +173,9 @@ func (s *Server) Start() error {
 	}
 
 	defer func() {
-		recover()
+		if r := recover(); r != nil {
+			panicked = true
+		}
 	}()
 
 	result, err := run(pass)
@@ -179,6 +184,12 @@ func (s *Server) Start() error {
 	}
 	if result != nil {
 		t.Error("Expected nil result from run function")
+	}
+
+	// If the analyzer correctly detects unsorted methods, it will try to call Reportf
+	// Since Reportf is nil, this will panic, which we catch above
+	if !panicked {
+		t.Error("Expected analyzer to detect unsorted methods and attempt to report")
 	}
 }
 
@@ -211,12 +222,18 @@ func TestRunWithMalformedAST(t *testing.T) {
 	}
 }
 
-func TestRunWithInvalidSource(t *testing.T) {
+func TestRunWithSortedMethods(t *testing.T) {
+	// This test verifies that the analyzer does NOT report when methods are already sorted
+	// Start() comes first (exported) and helper() comes second (private helper)
 	source := `package test
 
 type Server struct{}
 
 func (s *Server) Start() error {
+	return s.helper()
+}
+
+func (s *Server) helper() error {
 	return nil
 }
 `
@@ -230,6 +247,7 @@ func (s *Server) Start() error {
 	files := []*ast.File{file}
 	inspectResult := inspector.New(files)
 
+	panicked := false
 	pass := &analysis.Pass{
 		ResultOf: map[*analysis.Analyzer]interface{}{
 			inspect.Analyzer: inspectResult,
@@ -238,11 +256,22 @@ func (s *Server) Start() error {
 		Files: files,
 	}
 
+	defer func() {
+		if r := recover(); r != nil {
+			panicked = true
+		}
+	}()
+
 	result, err := run(pass)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
 	if result != nil {
 		t.Error("Expected nil result from run function")
+	}
+
+	// Since methods are already sorted, Reportf should NOT be called, so no panic expected
+	if panicked {
+		t.Error("Expected no report for already sorted methods")
 	}
 }
