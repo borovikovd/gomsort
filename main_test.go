@@ -212,3 +212,95 @@ func TestMainFlagParsingWithFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestMainWithDryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+
+	// Create go.mod file
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	testContent := `package test
+
+type Server struct{}
+
+func (s *Server) helper() {}
+func (s *Server) Start() error { return nil }
+`
+
+	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Save original values
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Test dry run flag
+	os.Args = []string{"gomsort", "-n", testFile}
+
+	// Reset flag package state
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	main()
+
+	// Verify file wasn't modified (dry run)
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(content) != testContent {
+		t.Error("File was modified despite dry-run flag")
+	}
+}
+
+func TestMainWithDefaultDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd)
+
+	// Change to temp directory
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create go.mod file
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile("go.mod", []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	testContent := `package test
+type Server struct{}
+func (s *Server) Start() error { return nil }
+`
+
+	err = os.WriteFile("test.go", []byte(testContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Save original values
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Test with no arguments (should default to ".")
+	os.Args = []string{"gomsort"}
+
+	// Reset flag package state
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	main()
+}
