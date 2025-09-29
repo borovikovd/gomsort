@@ -304,3 +304,129 @@ func (s *Server) Start() error { return nil }
 
 	main()
 }
+
+func TestMainWithVerboseFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+
+	// Create go.mod file
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	testContent := `package test
+
+type Server struct{}
+
+func (s *Server) helper() {}
+func (s *Server) Start() error { return nil }
+`
+
+	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Save original values
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Test verbose flag
+	os.Args = []string{"gomsort", "-v", testFile}
+
+	// Reset flag package state
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	main()
+}
+
+func TestMainWithBothDryRunAndVerbose(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+
+	// Create go.mod file
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	testContent := `package test
+
+type Server struct{}
+
+func (s *Server) helper() {}
+func (s *Server) Start() error { return nil }
+`
+
+	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Save original values
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Test both dry run and verbose flags
+	os.Args = []string{"gomsort", "-n", "-v", testFile}
+
+	// Reset flag package state
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	main()
+
+	// Verify file wasn't modified (dry run)
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(content) != testContent {
+		t.Error("File was modified despite dry-run flag")
+	}
+}
+
+func TestMainWithMultipleArguments(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create go.mod file
+	goModContent := `module testmodule
+go 1.22
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	testContent := `package test
+type Server struct{}
+func (s *Server) Start() error { return nil }
+`
+
+	// Create multiple test files
+	testFile1 := filepath.Join(tmpDir, "test1.go")
+	testFile2 := filepath.Join(tmpDir, "test2.go")
+
+	for _, file := range []string{testFile1, testFile2} {
+		err := os.WriteFile(file, []byte(testContent), 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Save original values
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Test with multiple file arguments
+	os.Args = []string{"gomsort", "-v", testFile1, testFile2}
+
+	// Reset flag package state
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	main()
+}
