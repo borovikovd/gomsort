@@ -58,11 +58,11 @@ func (s *Server) Status() string {
 		expectedDepth  int
 		expectedDegree int
 	}{
-		{"Start", 2, 0},        // calls connect -> authenticate (depth=2), not called by others (degree=0)
-		{"connect", 1, 2},      // calls authenticate (depth=1), called by Start and Status (degree=2)
-		{"authenticate", 0, 1}, // calls nothing (depth=0), called by connect (degree=1)
-		{"Stop", 0, 0},         // calls nothing (depth=0), not called by others (degree=0)
-		{"Status", 2, 0},       // calls connect -> authenticate (depth=2), not called by others (degree=0)
+		{"Start", 0, 0},        // an entry point: nothing calls it
+		{"connect", 1, 2},      // called by Start and Status, both entry points
+		{"authenticate", 2, 1}, // called by connect, one call below them
+		{"Stop", 0, 0},         // an entry point
+		{"Status", 0, 0},       // an entry point
 	}
 
 	for _, test := range tests {
@@ -191,5 +191,39 @@ func TestMethodKey(t *testing.T) {
 		if result != test.expected {
 			t.Errorf("methodKey(%s, %s) = %s, want %s", test.receiver, test.method, result, test.expected)
 		}
+	}
+}
+
+func TestCallGraphCountsDistinctCallersAndIgnoresRecursion(t *testing.T) {
+	source := `
+package test
+
+type Tree struct{}
+
+func (t *Tree) Walk() {
+	t.visit()
+	t.visit()
+}
+
+func (t *Tree) visit() {
+	t.visit()
+}
+`
+	file, err := decorator.Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := map[string]*MethodInfo{}
+	for _, m := range buildCallGraph(file).GetMethods() {
+		methods[m.Name] = m
+	}
+	if got := methods["visit"].InDegree; got != 1 {
+		t.Errorf("visit: in-degree %d, want 1 (Walk, counted once; recursion ignored)", got)
+	}
+	if got := methods["Walk"].MaxDepth; got != 0 {
+		t.Errorf("Walk: depth %d, want 0", got)
+	}
+	if got := methods["visit"].MaxDepth; got != 1 {
+		t.Errorf("visit: depth %d, want 1", got)
 	}
 }

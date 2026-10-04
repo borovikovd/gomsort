@@ -155,7 +155,7 @@ func TestShouldSwap(t *testing.T) {
 			name:     "same receiver, export, depth - higher in-degree last",
 			a:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 100},
 			b:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 3, Position: 200},
-			expected: true, // lower in-degree should come before higher in-degree
+			expected: false, // lower in-degree should come before higher in-degree
 		},
 		{
 			name:     "all same - position fallback",

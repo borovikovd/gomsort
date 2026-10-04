@@ -1,20 +1,22 @@
 package sorter
 
 import (
-	"strings"
+	"go/token"
+	"sort"
 
 	"github.com/dave/dst"
 )
 
 type MethodInfo struct {
 	Name         string
-	ReceiverName string
-	ReceiverType string
+	ReceiverName string // the receiver's type name, without * or type parameters
+	ReceiverType string // the receiver's type as written, e.g. *Server
+	ReceiverVar  string // the receiver's variable name, or "" when unnamed
 	IsExported   bool
 	FuncDecl     *dst.FuncDecl
 	Position     int
-	InDegree     int
-	MaxDepth     int
+	InDegree     int // distinct methods of the same type that call this one
+	MaxDepth     int // longest chain of calls from an entry point to this one
 }
 
 type MethodSortKey struct {
@@ -42,67 +44,65 @@ func extractMethodInfo(decl *dst.FuncDecl, position int) *MethodInfo {
 
 	method := &MethodInfo{
 		Name:       decl.Name.Name,
-		IsExported: isExported(decl.Name.Name),
+		IsExported: token.IsExported(decl.Name.Name),
 		FuncDecl:   decl,
 		Position:   position,
 	}
 
 	recv := decl.Recv.List[0]
+	if len(recv.Names) > 0 && recv.Names[0].Name != "_" {
+		method.ReceiverVar = recv.Names[0].Name
+	}
 
-	switch recvType := recv.Type.(type) {
-	case *dst.Ident:
-		method.ReceiverType = recvType.Name
-		method.ReceiverName = recvType.Name
-	case *dst.StarExpr:
-		if ident, ok := recvType.X.(*dst.Ident); ok {
+	typ, pointer := recv.Type, false
+	if star, ok := typ.(*dst.StarExpr); ok {
+		typ, pointer = star.X, true
+	}
+	// A generic type's receiver lists its type parameters: Set[T], Map[K, V].
+	switch generic := typ.(type) {
+	case *dst.IndexExpr:
+		typ = generic.X
+	case *dst.IndexListExpr:
+		typ = generic.X
+	}
+	if ident, ok := typ.(*dst.Ident); ok {
+		method.ReceiverName = ident.Name
+		method.ReceiverType = ident.Name
+		if pointer {
 			method.ReceiverType = "*" + ident.Name
-			method.ReceiverName = ident.Name
 		}
 	}
 
 	return method
 }
 
-// Helper function since DST doesn't have ast.IsExported
-func isExported(name string) bool {
-	return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
-}
-
+// sortMethods orders methods by receiver type, then exported first, then
+// entry points before the helpers they call, then shared helpers last, then
+// by original position.
 func sortMethods(methods []*MethodInfo) []*MethodInfo {
 	sorted := make([]*MethodInfo, len(methods))
 	copy(sorted, methods)
-
-	// Use bubble sort for consistency with existing implementation
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := 0; j < len(sorted)-i-1; j++ {
-			if shouldSwap(sorted[j], sorted[j+1]) {
-				sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
-			}
-		}
-	}
-
+	sort.SliceStable(sorted, func(i, j int) bool { return less(sorted[i], sorted[j]) })
 	return sorted
 }
 
+func less(a, b *MethodInfo) bool {
+	if a.ReceiverName != b.ReceiverName {
+		return a.ReceiverName < b.ReceiverName
+	}
+	if a.IsExported != b.IsExported {
+		return a.IsExported
+	}
+	if a.MaxDepth != b.MaxDepth {
+		return a.MaxDepth < b.MaxDepth
+	}
+	if a.InDegree != b.InDegree {
+		return a.InDegree < b.InDegree
+	}
+	return a.Position < b.Position
+}
+
+// shouldSwap reports whether b belongs before a.
 func shouldSwap(a, b *MethodInfo) bool {
-	keyA := a.SortKey()
-	keyB := b.SortKey()
-
-	if keyA.ReceiverName != keyB.ReceiverName {
-		return strings.Compare(keyA.ReceiverName, keyB.ReceiverName) > 0
-	}
-
-	if keyA.IsExported != keyB.IsExported {
-		return !keyA.IsExported
-	}
-
-	if keyA.MaxDepth != keyB.MaxDepth {
-		return keyA.MaxDepth > keyB.MaxDepth
-	}
-
-	if keyA.InDegree != keyB.InDegree {
-		return keyA.InDegree < keyB.InDegree
-	}
-
-	return keyA.OriginalPos > keyB.OriginalPos
+	return less(b, a)
 }

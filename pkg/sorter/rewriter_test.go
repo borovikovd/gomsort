@@ -133,27 +133,186 @@ func (c *Client) disconnect() {}
 		t.Error("Expected methods to be reordered")
 	}
 
-	sortedCode := string(sorted)
+	// Each type's methods are sorted within the places they already held:
+	// Server's in the first and third, Client's in the second and fourth.
+	want := []string{"func (s *Server) Start()", "func (c *Client) Connect()", "func (s *Server) helper()", "func (c *Client) disconnect()"}
+	assertOrder(t, string(sorted), want)
+}
 
-	// Client methods should come before Server methods (alphabetical)
-	clientConnectIndex := strings.Index(sortedCode, "func (c *Client) Connect()")
-	clientDisconnectIndex := strings.Index(sortedCode, "func (c *Client) disconnect()")
-	serverStartIndex := strings.Index(sortedCode, "func (s *Server) Start()")
-	serverHelperIndex := strings.Index(sortedCode, "func (s *Server) helper()")
-
-	if clientConnectIndex == -1 || clientDisconnectIndex == -1 || serverStartIndex == -1 || serverHelperIndex == -1 {
-		t.Fatal("Could not find all methods in sorted code")
+// assertOrder fails unless each of want appears in code, in that order.
+func assertOrder(t *testing.T, code string, want []string) {
+	t.Helper()
+	last := -1
+	for _, w := range want {
+		i := strings.Index(code, w)
+		if i == -1 {
+			t.Fatalf("%q not found in:\n%s", w, code)
+		}
+		if i < last {
+			t.Fatalf("%q is out of order; want %q in:\n%s", w, want, code)
+		}
+		last = i
 	}
+}
 
-	// Client.Connect (exported) should come first
-	// Client.disconnect (private) should come second
-	// Server.Start (exported) should come third
-	// Server.helper (private) should come last
-	if !(clientConnectIndex < clientDisconnectIndex &&
-		clientDisconnectIndex < serverStartIndex &&
-		serverStartIndex < serverHelperIndex) {
-		t.Errorf("Methods not in expected order. Client.Connect:%d, Client.disconnect:%d, Server.Start:%d, Server.helper:%d",
-			clientConnectIndex, clientDisconnectIndex, serverStartIndex, serverHelperIndex)
+func TestSorterKeepsMethodsInPlace(t *testing.T) {
+	// The README's example, with a constructor after the methods: methods are
+	// reordered among themselves and nothing moves past NewServer.
+	source := `package test
+
+type Server struct {
+	addr string
+}
+
+func (s *Server) helper() string {
+	return "help"
+}
+
+func (s *Server) Start() error {
+	return s.connect()
+}
+
+func (s *Server) connect() error {
+	s.helper()
+	return nil
+}
+
+func (s *Server) Stop() error {
+	return nil
+}
+
+func NewServer() *Server { return &Server{} }
+`
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Error("expected methods to be reordered")
+	}
+	assertOrder(t, string(sorted), []string{
+		"type Server struct",
+		"func (s *Server) Start()",
+		"func (s *Server) Stop()",
+		"func (s *Server) connect()",
+		"func (s *Server) helper()",
+		"func NewServer()",
+	})
+}
+
+func TestSorterLeavesSortedTypesAlone(t *testing.T) {
+	// Each type's methods are already in order, though the types are
+	// interleaved and not alphabetical; nothing changes.
+	source := `package test
+
+type Table struct{}
+type View struct{}
+
+func (t *Table) ID() string { return "" }
+
+func (v *View) ID() string { return "" }
+
+func tablesByID() {}
+
+func (t *Table) Column() {}
+`
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed || string(sorted) != source {
+		t.Errorf("expected no change, got:\n%s", sorted)
+	}
+}
+
+func TestSorterFollowsAnyReceiverName(t *testing.T) {
+	// The receiver is "srv", and resolve passes fromEvent on as a value; both
+	// make resolve an entry point and fromEvent its helper.
+	source := `package test
+
+type pullRequest struct{}
+
+func (srv *pullRequest) fromEvent() error { return nil }
+
+func (srv *pullRequest) resolve() error {
+	run(srv.fromEvent)
+	return nil
+}
+
+func run(f func() error) { _ = f() }
+`
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sorted, _, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOrder(t, string(sorted), []string{"func (srv *pullRequest) resolve()", "func (srv *pullRequest) fromEvent()", "func run("})
+}
+
+func TestSorterGenericReceivers(t *testing.T) {
+	source := `package test
+
+type Set[T comparable] map[T]struct{}
+
+func (s Set[T]) add(v T) { s[v] = struct{}{} }
+
+func (s Set[T]) Add(v T) { s.add(v) }
+
+type Pair[K comparable, V any] struct{}
+
+func (p *Pair[K, V]) swap() {}
+
+func (p *Pair[K, V]) Swap() { p.swap() }
+`
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Error("expected methods to be reordered")
+	}
+	assertOrder(t, string(sorted), []string{
+		"type Set[T comparable]", "func (s Set[T]) Add(", "func (s Set[T]) add(",
+		"type Pair[K comparable, V any]", "func (p *Pair[K, V]) Swap(", "func (p *Pair[K, V]) swap(",
+	})
+}
+
+func TestSorterSkipsGeneratedFiles(t *testing.T) {
+	source := `// Code generated by protoc-gen-go. DO NOT EDIT.
+
+package test
+
+type Server struct{}
+
+func (s *Server) helper() {}
+
+func (s *Server) Start() { s.helper() }
+`
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed || string(sorted) != source {
+		t.Errorf("expected a generated file to be left alone, got:\n%s", sorted)
 	}
 }
 

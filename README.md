@@ -4,29 +4,27 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/borovikovd/gomsort)](https://goreportcard.com/report/github.com/borovikovd/gomsort)
 [![codecov](https://codecov.io/gh/borovikovd/gomsort/branch/main/graph/badge.svg)](https://codecov.io/gh/borovikovd/gomsort)
 
-A Go tool that sorts methods within types for better code readability. The tool analyzes call graphs and method usage patterns to optimize method ordering.
+A Go tool that sorts methods within types for better code readability. It reads which methods call which, and puts entry points before the helpers they use.
 
 ## Features
 
-- **Intelligent Method Sorting**: Orders methods based on call depth and usage patterns
-- **Call Graph Analysis**: Builds dependency graphs to identify entry points and helpers
-- **Multiple Integration Options**: Standalone CLI tool + golangci-lint analyzer
-- **Configurable**: Customize sorting criteria via configuration files
-- **Safe**: Preserves code semantics while improving readability
+- **Method sorting by call graph**: entry points first, the helpers they call after them
+- **In place**: each type's methods are reordered among the places they already hold; types, functions and other declarations don't move
+- **CLI and analyzer**: a `gofmt`-style command, and a `go/analysis` analyzer for your own driver
+- **Safe**: only declarations move, with their comments; generated files, test files, `testdata` and `vendor` are left alone
 
 ## Sorting Algorithm
 
-Methods are sorted by the following criteria:
+Within each type, methods are sorted by:
 
-1. **Receiver Type**: Methods are grouped by their receiver type (alphabetical)
-2. **Exported First**: Public methods appear before private methods
-3. **Call Depth**: Entry points (low depth) come before deep helpers
-4. **In-Degree**: Shared helpers (high in-degree) appear last
-5. **Original Position**: Stable sort fallback
+1. **Exported First**: Public methods appear before private methods
+2. **Call Depth**: Entry points come before the helpers they call, and those before the helpers they call in turn
+3. **In-Degree**: Among methods at the same depth, those used by more methods come later
+4. **Original Position**: Stable sort fallback
 
 This means:
 - Public entry points appear at the top
-- Deep internal helpers appear near the bottom  
+- Deep internal helpers appear near the bottom
 - Shared utility methods appear at the bottom
 
 ## Installation
@@ -72,21 +70,19 @@ gomsort -v file.go
 - `-n`: Dry run - show what would be changed without modifying files
 - `-v`: Verbose output
 
-**Note**: Like `go fmt`, gomsort processes directories recursively by default.
+**Note**: Like `go fmt`, gomsort processes directories recursively by default. It skips `_test.go` files, generated files (those marked `// Code generated ... DO NOT EDIT.`), and directories the go command ignores: `testdata`, `vendor`, and names starting with `.` or `_`.
 
-### Integration with golangci-lint
+### As a check in CI
 
-Add to your `.golangci.yml`:
+`-n` prints a line for each file it would change and nothing otherwise, so a check can fail on any output:
 
-```yaml
-linters:
-  enable:
-    - msort
-
-linters-settings:
-  msort:
-    # Configuration options here
+```bash
+out=$(gomsort -n .) && [ -z "$out" ] || { echo "$out"; exit 1; }
 ```
+
+### As an analyzer
+
+`github.com/borovikovd/gomsort/pkg/analyzer` provides a `go/analysis` analyzer named `msort` that reports files whose methods would be reordered, for use with `singlechecker`, `multichecker` or a custom golangci-lint build. It isn't one of golangci-lint's built-in linters.
 
 ## Example
 
@@ -138,28 +134,10 @@ func (s *Server) helper() string {
 }
 ```
 
-## Configuration
-
-Create a `.msort.json` file in your project root:
-
-```json
-{
-  "sort_criteria": {
-    "group_by_receiver": true,
-    "exported_first": true,
-    "sort_by_depth": true,
-    "sort_by_in_degree": true,
-    "preserve_original_order": true
-  },
-  "exclude": ["*_test.go"],
-  "include": ["*.go"]
-}
-```
-
 ## Development
 
 ### Prerequisites
-- Go 1.21 or later
+- Go 1.24 or later
 - make (optional, for convenience)
 
 ### Building
@@ -198,11 +176,11 @@ make dev  # fmt + lint + test
 The tool performs the following analysis:
 
 1. **Parse AST**: Extract all method declarations and their receivers
-2. **Build Call Graph**: Analyze method calls to build dependency relationships
+2. **Build Call Graph**: Record which methods each method calls, or passes on as a value, through its receiver (`s.connect()`, `run(s.serve)`). Only calls between methods of the same type, in the same file, count; recursion doesn't.
 3. **Calculate Metrics**:
    - **InDegree**: Number of distinct methods that call this method
-   - **MaxDepth**: Longest call chain where this method appears
-4. **Sort Methods**: Apply sorting criteria to optimize readability
+   - **MaxDepth**: Longest chain of calls from an entry point (a method nothing calls) to this method; methods that call each other share a depth
+4. **Sort Methods**: Apply the sorting criteria to each type's methods, and put them back in the places that type's methods held
 
 ## License
 

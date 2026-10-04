@@ -74,8 +74,7 @@ func processDirectory(dir string, config *Config) error {
 		path := filepath.Join(dir, entry.Name())
 
 		if entry.IsDir() {
-			// Skip hidden directories (like go fmt)
-			if !strings.HasPrefix(entry.Name(), ".") {
+			if !skipDir(entry.Name()) {
 				if err := processDirectory(path, config); err != nil {
 					return err
 				}
@@ -91,6 +90,12 @@ func processDirectory(dir string, config *Config) error {
 	}
 
 	return nil
+}
+
+// skipDir reports whether a directory is one the go command ignores:
+// testdata, vendor, and names starting with "." or "_".
+func skipDir(name string) bool {
+	return name == "testdata" || name == "vendor" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
 }
 
 func processFile(filename string, config *Config) error {

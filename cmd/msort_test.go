@@ -620,3 +620,11 @@ func (s *Server incomplete syntax`
 		t.Error("Expected error from recursive directory processing")
 	}
 }
+
+func TestSkipDir(t *testing.T) {
+	for name, want := range map[string]bool{"testdata": true, "vendor": true, ".git": true, "_old": true, "pkg": false, "cmd": false} {
+		if got := skipDir(name); got != want {
+			t.Errorf("skipDir(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
