@@ -14,9 +14,10 @@ type MethodInfo struct {
 	IsExported   bool
 	FuncDecl     *ast.FuncDecl
 	Position     int
-	Callees      []*MethodInfo // methods of the same type it uses, in order of first use
-	Callers      int           // methods of the same type that use it
-	UsedOutside  bool          // used by a function or another type's method in the file
+	Run          int           // which run of consecutive methods of its type, in file order, it's in
+	Callees      []*MethodInfo // methods of its run it uses, in order of first use
+	Callers      int           // methods of its run that use it
+	UsedOutside  bool          // used from outside its run: by a function, another type, or another run
 
 	uses map[*MethodInfo]bool // Callees, for looking up
 }
@@ -55,25 +56,29 @@ func extractMethodInfo(decl *ast.FuncDecl, position int) *MethodInfo {
 	return method
 }
 
-// sortMethods orders each type's methods the way Go code usually reads:
-// exported methods first, in their current order, then the rest in call
-// order. That is, the helpers the exported methods use, in the order they
-// first use them, then the other unexported entry points in their current
-// order, each followed by its helpers, depth first. A helper several methods
-// use follows the first of them. Types come in the order of their first
-// method.
+// sortMethods orders each run of a type's methods the way Go code usually
+// reads: exported methods first, in their current order, then the rest in
+// call order. That is, the helpers the exported methods use, in the order
+// they first use them, then the other unexported entry points in their
+// current order, each followed by its helpers, depth first. A helper several
+// methods use follows the first of them. Runs come in file order.
 func sortMethods(methods []*MethodInfo) []*MethodInfo {
 	byPosition := make([]*MethodInfo, len(methods))
 	copy(byPosition, methods)
 	sort.SliceStable(byPosition, func(i, j int) bool { return byPosition[i].Position < byPosition[j].Position })
 
-	var receivers []string
-	byReceiver := make(map[string][]*MethodInfo)
+	type runKey struct {
+		receiver string
+		run      int
+	}
+	var runs []runKey
+	byRun := make(map[runKey][]*MethodInfo)
 	for _, m := range byPosition {
-		if _, seen := byReceiver[m.ReceiverName]; !seen {
-			receivers = append(receivers, m.ReceiverName)
+		key := runKey{m.ReceiverName, m.Run}
+		if _, seen := byRun[key]; !seen {
+			runs = append(runs, key)
 		}
-		byReceiver[m.ReceiverName] = append(byReceiver[m.ReceiverName], m)
+		byRun[key] = append(byRun[key], m)
 	}
 
 	sorted := make([]*MethodInfo, 0, len(methods))
@@ -91,8 +96,8 @@ func sortMethods(methods []*MethodInfo) []*MethodInfo {
 			}
 		}
 	}
-	for _, receiver := range receivers {
-		group := byReceiver[receiver]
+	for _, key := range runs {
+		group := byRun[key]
 		var exported []*MethodInfo
 		for _, m := range group {
 			if m.IsExported {

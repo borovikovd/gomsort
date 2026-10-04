@@ -6,8 +6,11 @@ import (
 )
 
 // CallGraph records, for the methods in one file, which methods of the same
-// type each one uses, and which are used from outside their type: by a
-// function or by another type's methods.
+// run each one uses, and which are used from outside their run: by a
+// function, another type's methods, or the same type's methods elsewhere in
+// the file. A run is a type's methods one after another, with no other
+// declaration between them; gomsort sorts each run on its own, so nothing
+// moves past another declaration.
 type CallGraph struct {
 	methods map[string]*MethodInfo
 }
@@ -19,14 +22,24 @@ func NewCallGraph() *CallGraph {
 func buildCallGraph(file *ast.File) *CallGraph {
 	cg := NewCallGraph()
 
-	position := 0
+	position, run, previous := 0, 0, ""
 	for _, decl := range file.Decls {
+		var method *MethodInfo
 		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
-			if method := extractMethodInfo(funcDecl, position); method != nil {
-				cg.AddMethod(method)
-				position++
-			}
+			method = extractMethodInfo(funcDecl, position)
 		}
+		if method == nil {
+			run++
+			previous = ""
+			continue
+		}
+		if method.ReceiverName != previous {
+			run++
+			previous = method.ReceiverName
+		}
+		method.Run = run
+		cg.AddMethod(method)
+		position++
 	}
 
 	usedOutside := make(map[string]bool)
@@ -64,7 +77,14 @@ func (cg *CallGraph) AddCall(fromReceiver, fromMethod, toReceiver, toMethod stri
 		return
 	}
 	from := cg.methods[methodKey(fromReceiver, fromMethod)]
-	if from == nil || from.uses[to] {
+	if from == nil {
+		return
+	}
+	if from.Run != to.Run {
+		to.UsedOutside = true
+		return
+	}
+	if from.uses[to] {
 		return
 	}
 	if from.uses == nil {

@@ -8,7 +8,6 @@ import (
 	"os"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -88,41 +87,36 @@ func (s *Sorter) Sort() ([]byte, bool, error) {
 	return formatted, true, nil
 }
 
-// newOrder lays out each type's methods the way the Uber Go style guide
-// orders a file, and returns the declarations' indexes in their new order,
-// or nil when nothing moves. A type's methods gather where the first of them
-// after the type's declaration is, or where its first method is when the
-// type is declared in another file or only has methods above its
-// declaration. There go, in order: the const, var and type declarations that
-// sat between that point and its last method, the type's constructors (newT
-// or NewT returning T) from anywhere after that point, and the methods in
-// sorted order. Functions that sat between the methods follow the block.
-// Nothing else moves.
+// newOrder returns the declarations' indexes with each run of a type's
+// methods in sorted order, or nil when nothing moves. A run's methods take
+// the places the run already holds, so nothing moves past another
+// declaration.
 func (s *Sorter) newOrder(sorted []*MethodInfo) []int {
-	decls := s.file.Decls
-	index := make(map[ast.Decl]int, len(decls))
-	for i, decl := range decls {
+	index := make(map[ast.Decl]int, len(s.file.Decls))
+	for i, decl := range s.file.Decls {
 		index[decl] = i
 	}
-	receiver := make(map[int]string, len(sorted))
-	methods := make(map[string][]int)
-	for _, method := range sorted {
-		i := index[method.FuncDecl]
-		receiver[i] = method.ReceiverName
-		methods[method.ReceiverName] = append(methods[method.ReceiverName], i)
+	order := make([]int, len(s.file.Decls))
+	for i := range order {
+		order[i] = i
 	}
-	l := newLayout(decls, receiver)
-
-	order := make([]int, 0, len(decls))
-	for i := range decls {
-		name, isMethod := receiver[i]
-		switch {
-		case l.moved[i]:
-		case !isMethod:
-			order = append(order, i)
-		case i == l.anchor[name]:
-			order = append(order, l.leading(i, name)...)
-			order = append(order, methods[name]...)
+	type runKey struct {
+		receiver string
+		run      int
+	}
+	runs := make(map[runKey][]int)
+	var keys []runKey
+	for _, method := range sorted {
+		key := runKey{method.ReceiverName, method.Run}
+		if _, seen := runs[key]; !seen {
+			keys = append(keys, key)
+		}
+		runs[key] = append(runs[key], index[method.FuncDecl])
+	}
+	for _, key := range keys {
+		places := slices.Sorted(slices.Values(runs[key]))
+		for k, i := range runs[key] {
+			order[places[k]] = i
 		}
 	}
 	if slices.IsSorted(order) {
@@ -169,98 +163,6 @@ func docOf(decl ast.Decl) *ast.CommentGroup {
 		return decl.Doc
 	}
 	return nil
-}
-
-// layout indexes a file's declarations once, so placing each type's block
-// costs only what goes into it: the whole layout is linear in the file.
-type layout struct {
-	anchor, last map[string]int   // per type: the method its block replaces, and its last method
-	gens         []int            // const, var and type declarations that may move, in order
-	constructors map[string][]int // per type, in order
-	moved        map[int]bool
-}
-
-func newLayout(decls []ast.Decl, receiver map[int]string) *layout {
-	l := &layout{
-		anchor:       make(map[string]int),
-		last:         make(map[string]int),
-		constructors: make(map[string][]int),
-		moved:        make(map[int]bool),
-	}
-	hasMethods := make(map[string]bool)
-	for _, name := range receiver {
-		hasMethods[name] = true
-	}
-	declared := make(map[string]int)
-	for i, decl := range decls {
-		if gen, ok := decl.(*ast.GenDecl); ok {
-			// A type with methods here anchors its own block, so it stays
-			// where it is rather than moving away from them.
-			anchorsBlock := false
-			if gen.Tok == token.TYPE {
-				for _, spec := range gen.Specs {
-					if typeSpec, ok := spec.(*ast.TypeSpec); ok {
-						declared[typeSpec.Name.Name] = i
-						anchorsBlock = anchorsBlock || hasMethods[typeSpec.Name.Name]
-					}
-				}
-			}
-			if !anchorsBlock {
-				l.gens = append(l.gens, i)
-			}
-		}
-		if typeName := constructorOf(decl); typeName != "" {
-			l.constructors[typeName] = append(l.constructors[typeName], i)
-		}
-		name, ok := receiver[i]
-		if !ok {
-			continue
-		}
-		at, seen := l.anchor[name]
-		typeAt, isDeclared := declared[name]
-		if !seen || (isDeclared && i > typeAt && at < typeAt) {
-			l.anchor[name] = i
-		}
-		l.last[name] = i
-	}
-	return l
-}
-
-// leading returns what goes before the block of a type's methods placed at
-// index at: the const, var and type declarations between there and its last
-// method, then its constructors from anywhere after there. It marks them
-// moved.
-func (l *layout) leading(at int, typeName string) []int {
-	var out []int
-	take := func(i int) {
-		if !l.moved[i] {
-			out = append(out, i)
-			l.moved[i] = true
-		}
-	}
-	for k := sort.SearchInts(l.gens, at+1); k < len(l.gens) && l.gens[k] < l.last[typeName]; k++ {
-		take(l.gens[k])
-	}
-	for _, i := range l.constructors[typeName] {
-		if i > at {
-			take(i)
-		}
-	}
-	return out
-}
-
-// constructorOf returns T when decl is a function named newT or NewT,
-// whatever follows, whose first result is T or a pointer to it, and ""
-// otherwise.
-func constructorOf(decl ast.Decl) string {
-	fn, ok := decl.(*ast.FuncDecl)
-	if !ok || fn.Recv != nil || fn.Type.Results == nil || len(fn.Type.Results.List) == 0 {
-		return ""
-	}
-	if !strings.HasPrefix(fn.Name.Name, "new") && !strings.HasPrefix(fn.Name.Name, "New") {
-		return ""
-	}
-	return baseName(fn.Type.Results.List[0].Type)
 }
 
 // hasMethods reports whether a line of source starts a method declaration,

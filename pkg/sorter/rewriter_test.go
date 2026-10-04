@@ -107,12 +107,12 @@ func (c *Client) disconnect() {}
 		t.Fatal(err)
 	}
 
-	if !changed {
-		t.Error("Expected methods to be reordered")
+	if changed {
+		t.Error("Expected no change")
 	}
 
-	// Each type's methods gather, sorted, where its first method was.
-	want := []string{"func (s *Server) Start()", "func (s *Server) helper()", "func (c *Client) Connect()", "func (c *Client) disconnect()"}
+	// Each method sits alone between another type's: nothing to sort.
+	want := []string{"func (s *Server) helper()", "func (c *Client) Connect()", "func (s *Server) Start()", "func (c *Client) disconnect()"}
 	assertOrder(t, string(sorted), want)
 }
 
@@ -133,9 +133,9 @@ func assertOrder(t *testing.T, code string, want []string) {
 }
 
 func TestSorterReadmeExample(t *testing.T) {
-	// The README's example, with a constructor after the methods: the
-	// constructor moves before them, exported methods come first, then
-	// helpers in call order.
+	// The README's example, with a constructor after the methods: exported
+	// methods come first, then helpers in call order, and the constructor
+	// stays where it is.
 	source := `package test
 
 type Server struct {
@@ -174,11 +174,11 @@ func NewServer() *Server { return &Server{} }
 	}
 	assertOrder(t, string(sorted), []string{
 		"type Server struct",
-		"func NewServer()",
 		"func (s *Server) Start()",
 		"func (s *Server) Stop()",
 		"func (s *Server) connect()",
 		"func (s *Server) helper()",
+		"func NewServer()",
 	})
 }
 
@@ -208,112 +208,6 @@ func (t *Table) Column() {}
 	}
 	if changed || string(sorted) != source {
 		t.Errorf("expected no change, got:\n%s", sorted)
-	}
-}
-
-func TestSorterMovesFunctionsAfterTheMethods(t *testing.T) {
-	// historyShows sat between Report's methods; it follows them now, and
-	// Run, before the first method, stays where it is.
-	source := `package test
-
-type Report struct{}
-
-func Run() { r := &Report{}; r.apply() }
-
-func (r *Report) apply() { r.step() }
-
-func historyShows() bool { return true }
-
-func (r *Report) step() {}
-
-func since() string { return "" }
-`
-	sorter, err := NewFromSource(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sorted, changed, err := sorter.Sort()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !changed {
-		t.Error("expected declarations to move")
-	}
-	assertOrder(t, string(sorted), []string{
-		"type Report struct", "func Run()", "func (r *Report) apply()", "func (r *Report) step()", "func historyShows()", "func since()",
-	})
-}
-
-func TestSorterLaysOutFileLikeUber(t *testing.T) {
-	// Before the first method nothing moves. The const that sat between the
-	// methods, then a constructor after them, go before the block; the helper
-	// function that sat between them follows it.
-	source := `package test
-
-type cache struct{}
-
-func newCacheForTests() *cache { return nil }
-
-func (c *cache) Get() { c.load() }
-
-const limit = 10
-
-func hash() int { return limit }
-
-func (c *cache) load() {}
-
-func (c *cache) Put() {}
-
-func newCache() *cache { return &cache{} }
-
-func unrelated() {}
-`
-	sorter, err := NewFromSource(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sorted, changed, err := sorter.Sort()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !changed {
-		t.Error("expected declarations to move")
-	}
-	assertOrder(t, string(sorted), []string{
-		"type cache struct", "func newCacheForTests()", "const limit", "func newCache()",
-		"func (c *cache) Get()", "func (c *cache) Put()", "func (c *cache) load()",
-		"func hash()", "func unrelated()",
-	})
-}
-
-func TestSorterJoinsMethodsWrittenAboveTheirType(t *testing.T) {
-	// One-line methods grouped above the types, as in Prometheus's
-	// promql/value.go: each joins its type's methods below the type's
-	// declaration, and the declarations stay where they are.
-	source := `package test
-
-func (Matrix) Type() string { return "matrix" }
-func (Scalar) Type() string { return "scalar" }
-
-// Scalar is a number.
-type Scalar struct{ V float64 }
-
-func (s Scalar) String() string { return "" }
-
-func helper() {}
-
-// Matrix is a table.
-type Matrix []float64
-
-func (m Matrix) Len() int { return len(m) }
-`
-	sorted := sortSource(t, source)
-	assertOrder(t, sorted, []string{
-		"type Scalar struct", "func (Scalar) Type()", "func (s Scalar) String()", "func helper()",
-		"type Matrix []float64", "func (Matrix) Type()", "func (m Matrix) Len()",
-	})
-	if strings.Index(sorted, "type Scalar struct") > strings.Index(sorted, "func helper()") {
-		t.Errorf("a declaration moved:\n%s", sorted)
 	}
 }
 
@@ -378,30 +272,57 @@ func TestSorterLeavesDeclarationsSharingALineAlone(t *testing.T) {
 	}
 }
 
-func TestSorterKeepsTypesWithMethodsInPlace(t *testing.T) {
-	// From Terraform's loader_snapshot.go: Loader is declared elsewhere, so
-	// its methods gather at the top. Snapshot sat between them, but it has
-	// its own constructor and method here, so it stays with them instead of
-	// moving above Loader's; the plain SnapshotModule moves up.
+func TestSorterKeepsFeatureSections(t *testing.T) {
+	// From dbproof's captures/service.go: each section keeps its types next
+	// to its methods. Only the methods within a section, one after another,
+	// are sorted; nothing moves past a declaration or a function.
 	source := `package test
 
-func (l *Loader) ModuleWalkerSnapshot() { l.makeWalker() }
+type Service struct{}
 
+func (s *Service) CaptureConfig() {}
+
+// Upload is one snapshot as the agent sent it.
+type Upload struct{}
+
+func (s *Service) store(u Upload) {}
+
+func (s *Service) Ingest(u Upload) { s.store(u) }
+
+func loadHead() {}
+
+// Snapshot is a capture's snapshot.
 type Snapshot struct{}
 
-func NewEmptySnapshot() *Snapshot { return nil }
+func (s *Service) LatestSnapshot() Snapshot { return s.Snapshot() }
 
-type SnapshotModule struct{}
-
-func (s *Snapshot) moduleManifest() {}
-
-func (l *Loader) makeWalker() {}
+func (s *Service) Snapshot() Snapshot { s.store(Upload{}); return Snapshot{} }
 `
 	assertOrder(t, sortSource(t, source), []string{
-		"type SnapshotModule struct{}",
-		"func (l *Loader) ModuleWalkerSnapshot()", "func (l *Loader) makeWalker()",
-		"type Snapshot struct{}", "func NewEmptySnapshot()", "func (s *Snapshot) moduleManifest()",
+		"func (s *Service) CaptureConfig()",
+		"type Upload struct{}", "func (s *Service) Ingest(", "func (s *Service) store(",
+		"func loadHead()",
+		"type Snapshot struct{}", "func (s *Service) LatestSnapshot()", "func (s *Service) Snapshot()",
 	})
+}
+
+func TestSorterKeepsHelpersUsedFromAnotherSectionInPlace(t *testing.T) {
+	// helper sits in its own section, used from Start's; it stays there,
+	// as does everything else.
+	source := `package test
+
+type S struct{}
+
+func (s *S) Start() { s.helper() }
+
+const limit = 1
+
+func (s *S) helper() {}
+`
+	sorted, changed, err := mustSorter(t, source).Sort()
+	if err != nil || changed || string(sorted) != source {
+		t.Errorf("got %q, %v, %v; want the source back unchanged", sorted, changed, err)
+	}
 }
 
 func TestSorterIsIdempotent(t *testing.T) {
