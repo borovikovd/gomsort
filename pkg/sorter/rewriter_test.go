@@ -132,10 +132,10 @@ func assertOrder(t *testing.T, code string, want []string) {
 	}
 }
 
-func TestSorterKeepsMethodsInPlace(t *testing.T) {
-	// The README's example, with a constructor after the methods: exported
-	// methods first, then helpers in call order, and nothing moves past
-	// NewServer.
+func TestSorterReadmeExample(t *testing.T) {
+	// The README's example, with a constructor after the methods: the
+	// constructor moves before them, exported methods come first, then
+	// helpers in call order.
 	source := `package test
 
 type Server struct {
@@ -174,11 +174,11 @@ func NewServer() *Server { return &Server{} }
 	}
 	assertOrder(t, string(sorted), []string{
 		"type Server struct",
+		"func NewServer()",
 		"func (s *Server) Start()",
 		"func (s *Server) Stop()",
 		"func (s *Server) connect()",
 		"func (s *Server) helper()",
-		"func NewServer()",
 	})
 }
 
@@ -242,6 +242,130 @@ func since() string { return "" }
 	assertOrder(t, string(sorted), []string{
 		"type Report struct", "func Run()", "func (r *Report) apply()", "func (r *Report) step()", "func historyShows()", "func since()",
 	})
+}
+
+func TestSorterLaysOutFileLikeUber(t *testing.T) {
+	// Before the first method nothing moves. The const that sat between the
+	// methods, then a constructor after them, go before the block; the helper
+	// function that sat between them follows it.
+	source := `package test
+
+type cache struct{}
+
+func newCacheForTests() *cache { return nil }
+
+func (c *cache) Get() { c.load() }
+
+const limit = 10
+
+func hash() int { return limit }
+
+func (c *cache) load() {}
+
+func (c *cache) Put() {}
+
+func newCache() *cache { return &cache{} }
+
+func unrelated() {}
+`
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Error("expected declarations to move")
+	}
+	assertOrder(t, string(sorted), []string{
+		"type cache struct", "func newCacheForTests()", "const limit", "func newCache()",
+		"func (c *cache) Get()", "func (c *cache) Put()", "func (c *cache) load()",
+		"func hash()", "func unrelated()",
+	})
+}
+
+func TestSorterIsIdempotent(t *testing.T) {
+	// Sorting sorted code changes nothing, for every source these tests sort.
+	example, err := os.ReadFile("../../testdata/complex_example.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := []string{string(example), `package test
+
+type S struct{}
+
+func (s *S) b() { s.c() }
+func helper() {}
+func (s *S) A() { s.b(); s.d() }
+func (s *S) c() {}
+const k = 1
+func (s *S) d() { s.c() }
+func (s *S) Z() {}
+func NewS() *S { return nil }
+`}
+	for i, source := range sources {
+		once := sortSource(t, source)
+		twice, changed, err := mustSorter(t, once).Sort()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if changed || string(twice) != once {
+			t.Errorf("source %d: sorting again changed it:\n%s", i, twice)
+		}
+	}
+}
+
+func TestSorterMovesOnlyWhatChanged(t *testing.T) {
+	sorted := `package test
+
+type S struct{}
+
+func (s *S) Start() { s.parse(); s.flush() }
+
+func (s *S) Stop() { s.flush() }
+
+func (s *S) parse() { s.token() }
+
+func (s *S) token() {}
+
+func (s *S) flush() {}
+`
+	if got := sortSource(t, sorted); got != sorted {
+		t.Fatalf("expected the base to be sorted, got:\n%s", got)
+	}
+
+	// Another method starting to use a helper moves nothing.
+	moreUsers := strings.Replace(sorted, "func (s *S) parse() { s.token() }", "func (s *S) parse() { s.token(); s.flush() }", 1)
+	if got := sortSource(t, moreUsers); got != moreUsers {
+		t.Errorf("a helper gaining a user moved something:\n%s", got)
+	}
+
+	// A new helper appended at the end moves to under its user, and nothing
+	// else moves.
+	newHelper := strings.Replace(sorted, "func (s *S) Stop() { s.flush() }", "func (s *S) Stop() { s.flush(); s.drain() }", 1) + "\nfunc (s *S) drain() {}\n"
+	assertOrder(t, sortSource(t, newHelper), []string{
+		"func (s *S) Start()", "func (s *S) Stop()", "func (s *S) parse()", "func (s *S) token()", "func (s *S) flush()", "func (s *S) drain()",
+	})
+}
+
+func mustSorter(t *testing.T, source string) *Sorter {
+	t.Helper()
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sorter
+}
+
+func sortSource(t *testing.T, source string) string {
+	t.Helper()
+	sorted, _, err := mustSorter(t, source).Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(sorted)
 }
 
 func TestSorterFollowsAnyReceiverName(t *testing.T) {

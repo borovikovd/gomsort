@@ -22,7 +22,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Each type's methods are grouped where its first method is:\n")
 		fmt.Fprintf(os.Stderr, "  1. Exported methods first, in their current order\n")
 		fmt.Fprintf(os.Stderr, "  2. Then the rest in call order, each followed by the helpers it uses\n")
-		fmt.Fprintf(os.Stderr, "  3. Functions that sat between them follow the methods\n")
+		fmt.Fprintf(os.Stderr, "  3. Declarations and constructors before them, functions after\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		flag.PrintDefaults()
 	}

@@ -9,7 +9,7 @@ A Go tool that sorts methods within types the way Go code usually reads: each ty
 ## Features
 
 - **Method sorting by call graph**: exported methods first, then the helpers in call order
-- **Grouped by type**: each type's methods gather where its first method is; helper functions that sat between them follow the block, and nothing before it moves
+- **Grouped by type**: each type's methods gather where its first method is, after its constructors; helper functions that sat between them follow the block, and nothing before it moves
 - **CLI and analyzer**: a `gofmt`-style command, and a `go/analysis` analyzer for your own driver
 - **Safe**: only declarations move, with their comments; generated files, test files, `testdata` and `vendor` are left alone
 
@@ -21,7 +21,7 @@ Within each type:
 2. **Then call order**: the unexported methods the exported ones use, in the order they first use them, each followed by its own helpers, depth first. Then the other unexported entry points, used from outside the type (by a function or another type's methods in the file) or not at all, in their current order, each followed by its helpers.
 3. **Shared helpers once**: a helper several methods use follows the first of them.
 
-Each type's methods form one block where its first method is. Declarations that sat between them, such as helper functions, follow the block in their order; nothing before a type's first method moves.
+Each type's methods form one block where its first method is, laid out as the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#function-grouping-and-ordering) orders a file. Before the block go the const, var and type declarations that sat between its methods, then the type's constructors (`newT` or `NewT` returning `T`) from later in the file. Functions that sat between the methods follow the block in their order. Nothing before a type's first method moves.
 
 This means:
 - A type's public methods come first and its helpers after them, top-down
@@ -177,9 +177,9 @@ make dev  # fmt + lint + test
 The tool performs the following analysis:
 
 1. **Parse AST**: Extract all method declarations and their receivers
-2. **Find Uses**: Record which methods each function and method uses, by calling them or passing them on as values (`g.add(c)`, `run(s.serve)`), in the order it first uses them. A use counts when the file shows the value's type: the receiver, parameters and results, `var` declarations, `T{...}`, `&T{...}`, `new(T)`, and ranges over slices or maps of `T`. Uses through struct fields or from other files aren't seen; recursion doesn't count.
+2. **Find Uses**: Record which methods each method uses through its receiver, by calling them or passing them on as values (`s.connect()`, `run(s.serve)`), in the order it first uses them. Any other `x.name` in the file, in a function or a method, counts as a use from outside of every method called `name`, which makes it an entry point that keeps its place. Matching by name may mistake another type's method or a field for one of ours, which can only keep a method where it is. Recursion doesn't count.
 3. **Order**: For each type, place its exported methods, then its unexported methods in call order, depth first
-4. **Rewrite**: Gather each type's methods where its first method is, with whatever sat between them after the block
+4. **Rewrite**: Gather each type's methods where its first method is, declarations and constructors before them, functions that sat between them after
 
 ## License
 

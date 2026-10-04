@@ -47,34 +47,75 @@ func (s *Sorter) Sort() ([]byte, bool, error) {
 	return buf.Bytes(), changed, nil
 }
 
-// reorderMethods gathers each type's methods, in sorted order, where its
-// first method is. Declarations that sat between them, such as helper
-// functions, follow the block in their order; nothing before a type's first
-// method moves. It reports whether anything moved.
+// reorderMethods lays out each type's methods the way the Uber Go style
+// guide orders a file. Where the type's first method is go, in order: the
+// const, var and type declarations that sat between its methods, the type's
+// constructors (newT or NewT returning T) from anywhere after that point,
+// and the methods in sorted order. Functions that sat between them follow
+// the block in their order. Nothing before a type's first method moves. It
+// reports whether anything moved.
 func (s *Sorter) reorderMethods(sorted []*MethodInfo) bool {
 	receiver := make(map[dst.Decl]string, len(sorted))
-	blocks := make(map[string][]dst.Decl)
+	methods := make(map[string][]dst.Decl)
+	last := make(map[string]int)
 	for _, method := range sorted {
 		receiver[method.FuncDecl] = method.ReceiverName
-		blocks[method.ReceiverName] = append(blocks[method.ReceiverName], method.FuncDecl)
+		methods[method.ReceiverName] = append(methods[method.ReceiverName], method.FuncDecl)
+	}
+	for i, decl := range s.file.Decls {
+		if name, ok := receiver[decl]; ok {
+			last[name] = i
+		}
 	}
 
+	moved := make(map[dst.Decl]bool)
 	decls := make([]dst.Decl, 0, len(s.file.Decls))
-	for _, decl := range s.file.Decls {
+	for i, decl := range s.file.Decls {
+		if moved[decl] {
+			continue
+		}
 		name, isMethod := receiver[decl]
 		if !isMethod {
 			decls = append(decls, decl)
 			continue
 		}
-		if block, first := blocks[name]; first {
-			decls = append(decls, block...)
-			delete(blocks, name)
+		block, first := methods[name]
+		if !first {
+			continue
 		}
+		// A type with one method has nothing between its methods.
+		for _, later := range s.file.Decls[i+1 : max(i+1, last[name])] {
+			if _, isGen := later.(*dst.GenDecl); isGen && !moved[later] {
+				decls = append(decls, later)
+				moved[later] = true
+			}
+		}
+		for _, later := range s.file.Decls[i+1:] {
+			if isConstructor(later, name) && !moved[later] {
+				decls = append(decls, later)
+				moved[later] = true
+			}
+		}
+		decls = append(decls, block...)
+		delete(methods, name)
 	}
 
 	changed := !slices.Equal(decls, s.file.Decls)
 	s.file.Decls = decls
 	return changed
+}
+
+// isConstructor reports whether decl is a function named newT or NewT,
+// whatever follows, whose first result is typeName or a pointer to it.
+func isConstructor(decl dst.Decl, typeName string) bool {
+	fn, ok := decl.(*dst.FuncDecl)
+	if !ok || fn.Recv != nil || fn.Type.Results == nil || len(fn.Type.Results.List) == 0 {
+		return false
+	}
+	if !strings.HasPrefix(fn.Name.Name, "new") && !strings.HasPrefix(fn.Name.Name, "New") {
+		return false
+	}
+	return baseName(fn.Type.Results.List[0].Type) == typeName
 }
 
 // generatedMarker is Go's marker for generated files:

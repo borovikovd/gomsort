@@ -228,33 +228,28 @@ func (t *Tree) visit() {
 	}
 }
 
-func TestCallGraphFindsUsesThroughTypedVariables(t *testing.T) {
-	// Plain functions and other types use ddlGen's methods through variables
-	// whose type the file shows; those methods become entry points.
+func TestCallGraphMarksUsesFromOutsideByName(t *testing.T) {
+	// Uses through anything but the method's own receiver count as outside
+	// uses of every method with that name: here add and quote, through a
+	// variable, a composite literal and a field. Only uses through the
+	// receiver link a method to its helpers.
 	source := `
 package test
 
 type ddlGen struct{}
 
-func (g ddlGen) alter(c Change) []string { return ddlGen{}.add(c) }
-func (g ddlGen) add(c Change) []string   { return nil }
-func (g ddlGen) drop(c Change) []string  { return nil }
-func (g ddlGen) quote() string           { return "" }
-func (g ddlGen) keep() string            { return "" }
-func (g ddlGen) unused() string          { return "" }
+func (g ddlGen) alter() []string { g.recreate(); return ddlGen{}.add() }
+func (g ddlGen) recreate()        { g.drop() }
+func (g ddlGen) add() []string    { return nil }
+func (g ddlGen) drop()            {}
+func (g ddlGen) quote() string    { return "" }
 
-func ChangeDDL(changes []Change) {
+type wrapper struct{ gen ddlGen }
+
+func ChangeDDL(w wrapper) {
 	g := ddlGen{}
-	for _, c := range changes {
-		g.drop(c)
-	}
-	p := &ddlGen{}
-	_ = p.alter
-	var q ddlGen
-	q.quote()
-	for _, h := range []*ddlGen{} {
-		h.keep()
-	}
+	g.add()
+	w.gen.quote()
 }
 `
 	file, err := decorator.Parse(source)
@@ -265,12 +260,22 @@ func ChangeDDL(changes []Change) {
 	for _, m := range buildCallGraph(file).GetMethods() {
 		methods[m.Name] = m
 	}
-	for name, outside := range map[string]bool{"alter": true, "add": false, "drop": true, "quote": true, "keep": true, "unused": false} {
+	for name, outside := range map[string]bool{"alter": false, "recreate": false, "add": true, "drop": false, "quote": true} {
 		if got := methods[name].UsedOutside; got != outside {
 			t.Errorf("%s: used outside %v, want %v", name, got, outside)
 		}
 	}
-	if got := methods["add"].Callers; got != 1 {
-		t.Errorf("add: %d callers, want 1 (alter, through ddlGen{})", got)
+	if got := len(methods["alter"].Callees); got != 1 {
+		t.Errorf("alter uses %d methods through its receiver, want 1 (recreate)", got)
+	}
+}
+
+func TestAddCallAcrossTypesMarksOutsideUse(t *testing.T) {
+	cg := NewCallGraph()
+	helper := &MethodInfo{Name: "helper", ReceiverName: "Server"}
+	cg.AddMethod(helper)
+	cg.AddCall("Client", "Connect", "Server", "helper")
+	if !helper.UsedOutside || helper.Callers != 0 {
+		t.Errorf("used outside %v, %d callers; want true, 0", helper.UsedOutside, helper.Callers)
 	}
 }
