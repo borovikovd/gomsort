@@ -344,6 +344,40 @@ func TestSorterReturnsUnchangedSourceAsGiven(t *testing.T) {
 	}
 }
 
+func TestSorterMovesEachDeclarationsTextWithItsComments(t *testing.T) {
+	// A comment after a closing brace, and a free-floating comment before a
+	// declaration, move with it; a comment after the last declaration stays
+	// at the end.
+	source := `package test
+
+type S struct{}
+
+// --- helpers ---
+
+func (s *S) b() {} // b's trailing comment
+
+// A starts things.
+func (s *S) A() { s.b() } // A's trailing comment
+
+// The end.
+`
+	assertOrder(t, sortSource(t, source), []string{
+		"type S struct{}",
+		"// A starts things.\nfunc (s *S) A() { s.b() } // A's trailing comment",
+		"// --- helpers ---\n\nfunc (s *S) b() {} // b's trailing comment",
+		"// The end.",
+	})
+}
+
+func TestSorterLeavesDeclarationsSharingALineAlone(t *testing.T) {
+	// gofmt never writes this; there's no clean way to split it.
+	source := "package test\n\ntype S struct{}\n\nfunc (s *S) b() {}; func (s *S) A() { s.b() }\n"
+	sorted, changed, err := mustSorter(t, source).Sort()
+	if err != nil || changed || string(sorted) != source {
+		t.Errorf("got %q, %v, %v; want the source back unchanged", sorted, changed, err)
+	}
+}
+
 func TestSorterIsIdempotent(t *testing.T) {
 	// Sorting sorted code changes nothing, for every source these tests sort.
 	example, err := os.ReadFile("../../testdata/complex_example.go")

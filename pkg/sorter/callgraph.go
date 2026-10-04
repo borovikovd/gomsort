@@ -1,9 +1,8 @@
 package sorter
 
 import (
+	"go/ast"
 	"sort"
-
-	"github.com/dave/dst"
 )
 
 // CallGraph records, for the methods in one file, which methods of the same
@@ -17,12 +16,12 @@ func NewCallGraph() *CallGraph {
 	return &CallGraph{methods: make(map[string]*MethodInfo)}
 }
 
-func buildCallGraph(file *dst.File) *CallGraph {
+func buildCallGraph(file *ast.File) *CallGraph {
 	cg := NewCallGraph()
 
 	position := 0
 	for _, decl := range file.Decls {
-		if funcDecl, ok := decl.(*dst.FuncDecl); ok {
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
 			if method := extractMethodInfo(funcDecl, position); method != nil {
 				cg.AddMethod(method)
 				position++
@@ -32,7 +31,7 @@ func buildCallGraph(file *dst.File) *CallGraph {
 
 	usedOutside := make(map[string]bool)
 	for _, decl := range file.Decls {
-		if funcDecl, ok := decl.(*dst.FuncDecl); ok && funcDecl.Body != nil {
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok && funcDecl.Body != nil {
 			cg.addUses(funcDecl, usedOutside)
 		}
 	}
@@ -93,14 +92,14 @@ func (cg *CallGraph) GetMethods() []*MethodInfo {
 // every method called name from outside its type. Matching by name alone may
 // take a different type's method, or a field, for one of ours; that only
 // keeps the method where it is.
-func (cg *CallGraph) addUses(decl *dst.FuncDecl, usedOutside map[string]bool) {
+func (cg *CallGraph) addUses(decl *ast.FuncDecl, usedOutside map[string]bool) {
 	method := extractMethodInfo(decl, 0)
-	dst.Inspect(decl.Body, func(n dst.Node) bool {
-		sel, ok := n.(*dst.SelectorExpr)
+	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
-		if ident, ok := sel.X.(*dst.Ident); ok && method != nil && method.ReceiverVar != "" && ident.Name == method.ReceiverVar {
+		if ident, ok := sel.X.(*ast.Ident); ok && method != nil && method.ReceiverVar != "" && ident.Name == method.ReceiverVar {
 			cg.AddCall(method.ReceiverName, method.Name, method.ReceiverName, sel.Sel.Name)
 		} else {
 			usedOutside[sel.Sel.Name] = true
@@ -111,17 +110,17 @@ func (cg *CallGraph) addUses(decl *dst.FuncDecl, usedOutside map[string]bool) {
 
 // baseName returns the name of the named type typ refers to: T for T, *T,
 // T[A] and *T[A, B].
-func baseName(typ dst.Expr) string {
+func baseName(typ ast.Expr) string {
 	switch typ := typ.(type) {
-	case *dst.Ident:
+	case *ast.Ident:
 		return typ.Name
-	case *dst.StarExpr:
+	case *ast.StarExpr:
 		return baseName(typ.X)
-	case *dst.IndexExpr:
+	case *ast.IndexExpr:
 		return baseName(typ.X)
-	case *dst.IndexListExpr:
+	case *ast.IndexListExpr:
 		return baseName(typ.X)
-	case *dst.ParenExpr:
+	case *ast.ParenExpr:
 		return baseName(typ.X)
 	}
 	return ""

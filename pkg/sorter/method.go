@@ -1,10 +1,9 @@
 package sorter
 
 import (
+	"go/ast"
 	"go/token"
 	"sort"
-
-	"github.com/dave/dst"
 )
 
 type MethodInfo struct {
@@ -13,7 +12,7 @@ type MethodInfo struct {
 	ReceiverType string // the receiver's type as written, e.g. *Server
 	ReceiverVar  string // the receiver's variable name, or "" when unnamed
 	IsExported   bool
-	FuncDecl     *dst.FuncDecl
+	FuncDecl     *ast.FuncDecl
 	Position     int
 	Callees      []*MethodInfo // methods of the same type it uses, in order of first use
 	Callers      int           // methods of the same type that use it
@@ -29,7 +28,7 @@ func (m *MethodInfo) IsEntryPoint() bool {
 	return m.IsExported || m.UsedOutside || m.Callers == 0
 }
 
-func extractMethodInfo(decl *dst.FuncDecl, position int) *MethodInfo {
+func extractMethodInfo(decl *ast.FuncDecl, position int) *MethodInfo {
 	if decl.Recv == nil || len(decl.Recv.List) == 0 {
 		return nil
 	}
@@ -48,7 +47,7 @@ func extractMethodInfo(decl *dst.FuncDecl, position int) *MethodInfo {
 	if name := baseName(recv.Type); name != "" {
 		method.ReceiverName = name
 		method.ReceiverType = name
-		if _, pointer := recv.Type.(*dst.StarExpr); pointer {
+		if _, pointer := recv.Type.(*ast.StarExpr); pointer {
 			method.ReceiverType = "*" + name
 		}
 	}

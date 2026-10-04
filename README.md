@@ -11,7 +11,7 @@ A Go tool that sorts methods within types the way Go code usually reads: each ty
 - **Method sorting by call graph**: exported methods first, then the helpers in call order
 - **Grouped by type**: each type's methods gather where its first method is, after its constructors; helper functions that sat between them follow the block, and nothing before it moves
 - **CLI and analyzer**: a `gofmt`-style command, and a `go/analysis` analyzer for your own driver
-- **Safe**: only declarations move, with their comments; generated files, test files, `testdata` and `vendor` are left alone
+- **Safe**: only whole declarations move, their text copied as it is with the comments around them, then gofmt'd; generated files, test files, `testdata` and `vendor` are left alone
 
 ## Sorting Algorithm
 
@@ -89,9 +89,9 @@ out=$(gomsort -n .) && [ -z "$out" ] || { echo "$out"; exit 1; }
 
 ## Scale
 
-gomsort sorts files in parallel, one per CPU at a time, and keeps nothing between files, so memory follows the largest files being sorted at once, not the size of the codebase; set `GOMAXPROCS` to use fewer CPUs and less memory. Generated files, and files where no line starts with `func (` (no method, as gofmt writes one), are skipped before parsing. Each file takes time linear in its size, apart from sorting its methods (`O(m log m)` for `m` methods).
+gomsort parses with Go's own `go/parser` and moves declarations as text, so a dry run never pays for more than parsing. It sorts files in parallel, one per CPU at a time, and keeps nothing between files: memory follows the largest files being sorted at once, not the size of the codebase, and `GOMAXPROCS` caps it. Generated files, and files where no line starts with `func (` (no method, as gofmt writes one), are skipped before parsing. Each file takes time linear in its size, apart from sorting its methods (`O(m log m)` for `m` methods).
 
-On Kubernetes (13,500 Go files, 2.3 million lines outside tests), a dry run takes about 1.5 seconds and 170 MB on a 14-core M-series Mac, or 7 seconds and 60 MB with `GOMAXPROCS=1`. On Prometheus it takes well under a second.
+On Kubernetes (13,500 Go files, 2.3 million lines outside tests), a dry run takes about half a second and 30 MB on a 14-core M-series Mac, or 1.4 seconds and 20 MB on one core (`GOMAXPROCS=1`).
 
 ## Example
 
@@ -187,7 +187,7 @@ The tool performs the following analysis:
 1. **Parse AST**: Extract all method declarations and their receivers
 2. **Find Uses**: Record which methods each method uses through its receiver, by calling them or passing them on as values (`s.connect()`, `run(s.serve)`), in the order it first uses them. Any other `x.name` in the file, in a function or a method, counts as a use from outside of every method called `name`, which makes it an entry point that keeps its place. Matching by name may mistake another type's method or a field for one of ours, which can only keep a method where it is. Recursion doesn't count.
 3. **Order**: For each type, place its exported methods, then its unexported methods in call order, depth first
-4. **Rewrite**: Gather each type's methods where its first method is, declarations and constructors before them, functions that sat between them after
+4. **Rewrite**: Gather each type's methods with its declaration (or where its first method is), declarations and constructors before them, functions that sat between them after. Each declaration's text moves as it is, from the end of the previous declaration to the end of its own last line, so its doc comment and anything before it come along; the file is then gofmt'd.
 
 ## License
 

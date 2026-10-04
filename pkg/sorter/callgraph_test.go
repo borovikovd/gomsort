@@ -1,10 +1,10 @@
 package sorter
 
 import (
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
-
-	"github.com/dave/dst/decorator"
 )
 
 func TestCallGraphBuilding(t *testing.T) {
@@ -37,7 +37,7 @@ func (s *Server) Status() string {
 }
 `
 
-	file, err := decorator.Parse(source)
+	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func (s *Server) listen() error {
 }
 `
 
-	file, err := decorator.Parse(source)
+	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func (s *Server) methodB() error {
 }
 `
 
-	file, err := decorator.Parse(source)
+	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func (t *Tree) visit() {
 	t.visit()
 }
 `
-	file, err := decorator.Parse(source)
+	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func ChangeDDL(w wrapper) {
 	w.gen.quote()
 }
 `
-	file, err := decorator.Parse(source)
+	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}

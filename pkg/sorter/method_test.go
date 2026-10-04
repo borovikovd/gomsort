@@ -1,11 +1,11 @@
 package sorter
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
-
-	"github.com/dave/dst"
-	"github.com/dave/dst/decorator"
 )
 
 func TestExtractMethodInfo(t *testing.T) {
@@ -20,7 +20,7 @@ func (s Server) ValueReceiver() {}
 func NotAMethod() {}
 `
 
-	file, err := decorator.Parse(source)
+	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func NotAMethod() {}
 	var methods []*MethodInfo
 	position := 0
 	for _, decl := range file.Decls {
-		if funcDecl, ok := decl.(*dst.FuncDecl); ok {
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
 			if method := extractMethodInfo(funcDecl, position); method != nil {
 				methods = append(methods, method)
 				position++
