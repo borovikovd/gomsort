@@ -37,12 +37,13 @@ func (s *Server) Status() string {
 }
 `
 
-	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cg := buildCallGraph(file)
+	cg := buildCallGraph(fset, file)
 	methods := cg.GetMethods()
 
 	if len(methods) != 5 {
@@ -107,12 +108,13 @@ func (s *Server) listen() error {
 }
 `
 
-	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cg := buildCallGraph(file)
+	cg := buildCallGraph(fset, file)
 	methods := cg.GetMethods()
 
 	if len(methods) != 4 {
@@ -155,12 +157,13 @@ func (s *Server) methodB() error {
 }
 `
 
-	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cg := buildCallGraph(file)
+	cg := buildCallGraph(fset, file)
 	methods := cg.GetMethods()
 
 	if len(methods) != 2 {
@@ -212,12 +215,13 @@ func (t *Tree) visit() {
 	t.visit()
 }
 `
-	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
 	methods := map[string]*MethodInfo{}
-	for _, m := range buildCallGraph(file).GetMethods() {
+	for _, m := range buildCallGraph(fset, file).GetMethods() {
 		methods[m.Name] = m
 	}
 	if got := methods["visit"].Callers; got != 1 {
@@ -252,12 +256,13 @@ func ChangeDDL(w wrapper) {
 	w.gen.quote()
 }
 `
-	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.ParseComments)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", source, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
 	methods := map[string]*MethodInfo{}
-	for _, m := range buildCallGraph(file).GetMethods() {
+	for _, m := range buildCallGraph(fset, file).GetMethods() {
 		methods[m.Name] = m
 	}
 	for name, outside := range map[string]bool{"alter": false, "recreate": false, "add": true, "drop": false, "quote": true} {

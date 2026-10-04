@@ -15,13 +15,13 @@ A Go tool that sorts methods the way Go code usually reads: exported ones first,
 
 ## Sorting Algorithm
 
-A run is a type's methods one after another, with no other declaration between them. Within each run:
+A run is a type's methods one after another, with no other declaration, and no free-standing comment such as `// --- Snapshots`, between them. A method's doc comment, or a comment after the previous method's closing brace, doesn't separate a run. Within each run:
 
 1. **Exported first**: exported methods, in their current order.
-2. **Then call order**: the unexported methods the exported ones use, in the order they first use them, each followed by its own helpers, depth first. Then the other unexported methods that start something of their own, in their current order, each followed by its helpers: those used from outside the run (by a function, another type's methods, or the same type's methods elsewhere in the file) or not used at all.
+2. **Then call order**: the unexported methods the exported ones use, in the order they first use them, each followed by its own helpers, depth first. Then the other unexported methods that start something of their own, in their current order, each followed by its helpers: those used by a function or another type's methods, or by no method of their run. Uses from the same type's methods in other runs don't count.
 3. **Shared helpers once**: a helper several methods use follows the first of them.
 
-Each run's methods take the places the run already holds, so nothing moves past another declaration: a file in feature sections keeps them, and a method used from another section stays in its own.
+Each run's methods take the places the run already holds, so nothing moves out of its section: a file in feature sections, marked by declarations or by comments, keeps them, and a method used from another section stays in its own.
 
 This means:
 - In each run, public methods come first and helpers after them, top-down
@@ -183,7 +183,7 @@ make dev  # fmt + lint + test
 The tool performs the following analysis:
 
 1. **Parse AST**: Extract all method declarations and their receivers
-2. **Find Uses**: Record which methods of its run each method uses through its receiver, by calling them or passing them on as values (`s.connect()`, `run(s.serve)`), in the order it first uses them. A use from another run, and any other `x.name` in the file, in a function or a method, count as uses from outside, which keep a method in its place. Matching by name may mistake another type's method or a field for one of ours, which can only keep a method where it is. Recursion doesn't count.
+2. **Find Uses**: Record which methods of its run each method uses through its receiver, by calling them or passing them on as values (`s.connect()`, `run(s.serve)`), in the order it first uses them. Uses from the same type's other runs don't count. Any other `x.name` in the file, in a function or a method, counts as a use from outside, which keeps a method in its place. Matching by name may mistake another type's method or a field for one of ours, which can only keep a method where it is. Recursion doesn't count.
 3. **Order**: For each run, place its exported methods, then its unexported methods in call order, depth first
 4. **Rewrite**: Put each run's methods back in the places the run held. Each method's text moves as it is, from the end of the previous declaration to the end of its own last line, so its doc comment and anything before it come along; the file is then gofmt'd.
 

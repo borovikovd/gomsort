@@ -2,15 +2,16 @@ package sorter
 
 import (
 	"go/ast"
+	"go/token"
 	"sort"
 )
 
 // CallGraph records, for the methods in one file, which methods of the same
-// run each one uses, and which are used from outside their run: by a
-// function, another type's methods, or the same type's methods elsewhere in
-// the file. A run is a type's methods one after another, with no other
-// declaration between them; gomsort sorts each run on its own, so nothing
-// moves past another declaration.
+// run each one uses, and which are used from outside their type: by a
+// function or another type's methods. A run is a type's methods one after
+// another, with no other declaration or free-standing comment between them;
+// gomsort sorts each run on its own, so nothing moves out of its section.
+// Uses from the same type's methods in other runs don't count either way.
 type CallGraph struct {
 	methods map[string]*MethodInfo
 }
@@ -19,11 +20,12 @@ func NewCallGraph() *CallGraph {
 	return &CallGraph{methods: make(map[string]*MethodInfo)}
 }
 
-func buildCallGraph(file *ast.File) *CallGraph {
+func buildCallGraph(fset *token.FileSet, file *ast.File) *CallGraph {
 	cg := NewCallGraph()
 
+	breaks := sectionBreaks(fset, file)
 	position, run, previous := 0, 0, ""
-	for _, decl := range file.Decls {
+	for i, decl := range file.Decls {
 		var method *MethodInfo
 		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
 			method = extractMethodInfo(funcDecl, position)
@@ -33,7 +35,7 @@ func buildCallGraph(file *ast.File) *CallGraph {
 			previous = ""
 			continue
 		}
-		if method.ReceiverName != previous {
+		if method.ReceiverName != previous || breaks[i] {
 			run++
 			previous = method.ReceiverName
 		}
@@ -54,6 +56,33 @@ func buildCallGraph(file *ast.File) *CallGraph {
 		}
 	}
 	return cg
+}
+
+// sectionBreaks returns the indexes of the declarations with a free-standing
+// comment above them, one with a blank line between it and the declaration,
+// such as "// --- Snapshots". A doc comment, or a comment after the previous
+// declaration on its last line, doesn't count. Such a comment starts a new
+// section, as a declaration does.
+func sectionBreaks(fset *token.FileSet, file *ast.File) map[int]bool {
+	breaks := make(map[int]bool)
+	comments := file.Comments
+	for i := 1; i < len(file.Decls); i++ {
+		prevEnd := file.Decls[i-1].End()
+		prevLine := fset.Position(prevEnd).Line
+		start := file.Decls[i].Pos()
+		doc := docOf(file.Decls[i])
+		if doc != nil {
+			start = doc.Pos()
+		}
+		for len(comments) > 0 && comments[0].Pos() < start {
+			c := comments[0]
+			comments = comments[1:]
+			if c.Pos() > prevEnd && c != doc && fset.Position(c.Pos()).Line > prevLine {
+				breaks[i] = true
+			}
+		}
+	}
+	return breaks
 }
 
 func methodKey(receiver, method string) string {
@@ -81,7 +110,6 @@ func (cg *CallGraph) AddCall(fromReceiver, fromMethod, toReceiver, toMethod stri
 		return
 	}
 	if from.Run != to.Run {
-		to.UsedOutside = true
 		return
 	}
 	if from.uses[to] {

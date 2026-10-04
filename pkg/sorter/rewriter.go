@@ -43,14 +43,20 @@ func WriteFile(filename string, content []byte) error {
 }
 
 // fileText splits a file's source by top-level declaration: the header up
-// to the end of the package clause's line, each declaration's text from the
-// end of the previous one's last line to the end of its own, which takes in
-// its doc comment and a comment after it on its last line, and what follows
-// the last declaration.
+// to the end of the package clause's line, each declaration's text, and what
+// follows the last declaration. A declaration's text runs from the end of
+// the previous one's last line to the end of its own. Its lead is what comes
+// before its first line: blank lines and free-standing comments, such as a
+// section's heading. Its body is the rest: its doc comment, the declaration
+// itself and a comment after it on its last line.
 type fileText struct {
 	header string
-	decls  []string
+	decls  []declChunk
 	tail   string
+}
+
+type declChunk struct {
+	lead, body string
 }
 
 // Sort reorders each type's methods and reports whether anything moved. It
@@ -61,22 +67,28 @@ func (s *Sorter) Sort() ([]byte, bool, error) {
 	if s.file == nil {
 		return []byte(s.source), false, nil
 	}
-	order := s.newOrder(sortMethods(buildCallGraph(s.file).GetMethods()))
+	order := s.newOrder(sortMethods(buildCallGraph(s.fset, s.file).GetMethods()))
 	text, ok := s.declText()
 	if order == nil || !ok {
 		return []byte(s.source), false, nil
 	}
 
+	// Bodies move; leads stay where they are, so a section's heading stays
+	// at the top of its section.
 	var out strings.Builder
 	out.WriteString(text.header)
 	for k, i := range order {
-		chunk := text.decls[i]
+		lead := text.decls[k].lead
 		// A declaration that has a new one above it gets one blank line, as
 		// gofmt'd code has; declarations that stay together keep their spacing.
 		if k == 0 && i != 0 || k > 0 && order[k-1] != i-1 {
-			chunk = "\n" + strings.TrimLeft(chunk, "\n")
+			lead = strings.TrimRight(lead, "\n") + "\n\n"
+			if strings.TrimSpace(lead) == "" {
+				lead = "\n"
+			}
 		}
-		out.WriteString(chunk)
+		out.WriteString(lead)
+		out.WriteString(text.decls[i].body)
 	}
 	out.WriteString(text.tail)
 
@@ -144,11 +156,17 @@ func (s *Sorter) declText() (fileText, bool) {
 		if doc := docOf(decl); doc != nil {
 			begin = doc.Pos()
 		}
-		if tf.Offset(begin) < start {
+		offset := tf.Offset(begin)
+		if offset < start {
+			return fileText{}, false
+		}
+		// The body starts at the beginning of the declaration's first line.
+		bodyStart := strings.LastIndexByte(s.source[:offset], '\n') + 1
+		if bodyStart < start {
 			return fileText{}, false
 		}
 		end := lineEnd(decl.End())
-		text.decls = append(text.decls, s.source[start:end])
+		text.decls = append(text.decls, declChunk{lead: s.source[start:bodyStart], body: s.source[bodyStart:end]})
 		start = end
 	}
 	text.tail = s.source[start:]

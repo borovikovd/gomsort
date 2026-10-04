@@ -239,9 +239,9 @@ func TestSorterReturnsUnchangedSourceAsGiven(t *testing.T) {
 }
 
 func TestSorterMovesEachDeclarationsTextWithItsComments(t *testing.T) {
-	// A comment after a closing brace, and a free-floating comment before a
-	// declaration, move with it; a comment after the last declaration stays
-	// at the end.
+	// A doc comment and a comment after a closing brace move with their
+	// method. A free-standing comment heads its section and stays at the
+	// top of it, and a comment after the last declaration stays at the end.
 	source := `package test
 
 type S struct{}
@@ -257,8 +257,8 @@ func (s *S) A() { s.b() } // A's trailing comment
 `
 	assertOrder(t, sortSource(t, source), []string{
 		"type S struct{}",
-		"// A starts things.\nfunc (s *S) A() { s.b() } // A's trailing comment",
-		"// --- helpers ---\n\nfunc (s *S) b() {} // b's trailing comment",
+		"// --- helpers ---\n\n// A starts things.\nfunc (s *S) A() { s.b() } // A's trailing comment",
+		"func (s *S) b() {} // b's trailing comment",
 		"// The end.",
 	})
 }
@@ -323,6 +323,79 @@ func (s *S) helper() {}
 	if err != nil || changed || string(sorted) != source {
 		t.Errorf("got %q, %v, %v; want the source back unchanged", sorted, changed, err)
 	}
+}
+
+func TestSorterKeepsCommentSections(t *testing.T) {
+	// A free-standing comment starts a section, as a declaration does:
+	// flush and parse stay under Start, and Stop under its header.
+	source := `package test
+
+type S struct{}
+
+// --- start section
+
+func (s *S) Start() {
+	s.flush()
+	s.parse()
+}
+
+func (s *S) parse() {}
+
+func (s *S) flush() {}
+
+// --- stop section
+
+func (s *S) Stop() {
+	s.flush()
+}
+`
+	assertOrder(t, sortSource(t, source), []string{
+		"// --- start section",
+		"func (s *S) Start()", "func (s *S) flush()", "func (s *S) parse()",
+		"// --- stop section\n\nfunc (s *S) Stop()",
+	})
+}
+
+func TestSorterIgnoresUsesFromOtherSectionsOfTheType(t *testing.T) {
+	// Stop, in another section, also uses flush; flush still follows Start,
+	// which uses it first.
+	source := `package test
+
+type S struct{}
+
+func (s *S) Start() {
+	s.flush()
+	s.parse()
+}
+
+func (s *S) parse() {}
+
+func (s *S) flush() {}
+
+type stopReason int
+
+func (s *S) Stop() { s.flush() }
+`
+	assertOrder(t, sortSource(t, source), []string{
+		"func (s *S) Start()", "func (s *S) flush()", "func (s *S) parse()", "type stopReason int", "func (s *S) Stop()",
+	})
+}
+
+func TestSorterDocAndTrailingCommentsDontStartSections(t *testing.T) {
+	// A doc comment, and a comment after a closing brace, belong to their
+	// methods; the run is whole and gets sorted.
+	source := `package test
+
+type S struct{}
+
+func (s *S) helper() {} // trailing
+
+// Start starts.
+func (s *S) Start() { s.helper() }
+`
+	assertOrder(t, sortSource(t, source), []string{
+		"// Start starts.\nfunc (s *S) Start()", "func (s *S) helper() {} // trailing",
+	})
 }
 
 func TestSorterIsIdempotent(t *testing.T) {
