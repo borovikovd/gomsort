@@ -61,8 +61,7 @@ type declChunk struct {
 
 // Sort reorders each type's methods and reports whether anything moved. It
 // moves each declaration's text as it is, with the comments and blank lines
-// before it, and formats the result with gofmt. An unchanged file comes back
-// as it was given.
+// before it. An unchanged file comes back as it was given.
 func (s *Sorter) Sort() ([]byte, bool, error) {
 	if s.file == nil {
 		return []byte(s.source), false, nil
@@ -95,6 +94,14 @@ func (s *Sorter) Sort() ([]byte, bool, error) {
 	formatted, err := format.Source([]byte(out.String()))
 	if err != nil {
 		return nil, true, err
+	}
+	// gofmt changes the result when the move needs it, such as to realign
+	// comments after one-line methods, or when the file wasn't as this Go's
+	// gofmt writes it to begin with, such as when an older gofmt that writes
+	// some code differently formatted it. Such a file keeps its formatting,
+	// and only the order changes.
+	if string(formatted) != out.String() && !s.isFormatted() {
+		return []byte(out.String()), true, nil
 	}
 	return formatted, true, nil
 }
@@ -171,6 +178,12 @@ func (s *Sorter) declText() (fileText, bool) {
 	}
 	text.tail = s.source[start:]
 	return text, true
+}
+
+// isFormatted reports whether the source is as this Go's gofmt writes it.
+func (s *Sorter) isFormatted() bool {
+	formatted, err := format.Source([]byte(s.source))
+	return err == nil && string(formatted) == s.source
 }
 
 func docOf(decl ast.Decl) *ast.CommentGroup {

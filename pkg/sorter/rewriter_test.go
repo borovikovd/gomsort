@@ -436,6 +436,61 @@ func (ctx *Context) JSONError[T string | []byte](msg T) { ctx.json(msg) }
 	assertOrder(t, sortSource(t, source), []string{"func (ctx *Context) JSONError[", "func (ctx *Context) json("})
 }
 
+func TestSorterKeepsTheFilesFormatting(t *testing.T) {
+	// A file gofmt would change, such as one an older gofmt wrote, isn't
+	// reformatted: only the order changes.
+	source := `package test
+
+type T struct{}
+
+func (T) helper() int {
+	return  1
+}
+
+func (T) Exported() int {
+	return 2
+}
+`
+	want := `package test
+
+type T struct{}
+
+func (T) Exported() int {
+	return 2
+}
+
+func (T) helper() int {
+	return  1
+}
+`
+	if got := sortSource(t, source); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestSorterRealignsCommentsOfMovedMethods(t *testing.T) {
+	// A gofmt'd file stays gofmt'd: one-line methods that no longer sit
+	// together lose the alignment they had.
+	source := `package test
+
+type T struct{}
+
+func (T) helper()   {} // h
+func (T) Exported() {} // e
+`
+	want := `package test
+
+type T struct{}
+
+func (T) Exported() {} // e
+
+func (T) helper() {} // h
+`
+	if got := sortSource(t, source); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestSorterIsIdempotent(t *testing.T) {
 	// Sorting sorted code changes nothing, for every source these tests sort.
 	example, err := os.ReadFile("../../testdata/complex_example.go")

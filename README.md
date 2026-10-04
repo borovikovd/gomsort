@@ -11,7 +11,7 @@ A Go tool that sorts methods the way Go code usually reads: exported ones first,
 - **Method sorting by call graph**: exported methods first, then the helpers in call order
 - **Keeps your layout**: only methods move, within each run of one type's methods; types, functions, constants and variables stay where they are
 - **CLI and analyzer**: a `gofmt`-style command, and a `go/analysis` analyzer for your own driver
-- **Safe**: only whole declarations move, their text copied as it is with the comments around them, then gofmt'd; generated files, test files, `testdata` and `vendor` are left alone
+- **Safe**: only whole declarations move, their text copied as it is with their comments; code that doesn't move isn't reformatted; generated files, test files, `testdata` and `vendor` are left alone
 
 ## Sorting Algorithm
 
@@ -187,7 +187,7 @@ The tool performs the following analysis:
 1. **Parse AST**: Extract all method declarations and their receivers
 2. **Find Uses**: Record which methods of its run each method uses through its receiver, by calling them or passing them on as values (`s.connect()`, `run(s.serve)`), in the order it first uses them. Uses from the same type's other runs don't count. Any other `x.name` in the file, in a function or a method, counts as a use from outside, which keeps a method in its place. Matching by name may mistake another type's method or a field for one of ours, which can only keep a method where it is. Recursion doesn't count.
 3. **Order**: For each run, place its exported methods, then its unexported methods in call order, depth first
-4. **Rewrite**: Put each run's methods back in the places the run held. Each method's text moves as it is, from the end of the previous declaration to the end of its own last line, so its doc comment and anything before it come along; the file is then gofmt'd.
+4. **Rewrite**: Put each run's methods back in the places the run held. Each method's text moves as it is, from its doc comment to the end of its last line; blank lines and free-standing comments above it stay in place. A file that was gofmt'd is gofmt'd again, which only realigns what moved; a file formatted otherwise, such as by an older gofmt, keeps its formatting.
 
 ## License
 
