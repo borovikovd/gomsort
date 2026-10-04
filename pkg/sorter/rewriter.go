@@ -175,7 +175,7 @@ func docOf(decl ast.Decl) *ast.CommentGroup {
 // costs only what goes into it: the whole layout is linear in the file.
 type layout struct {
 	anchor, last map[string]int   // per type: the method its block replaces, and its last method
-	gens         []int            // const, var and type declarations, in order
+	gens         []int            // const, var and type declarations that may move, in order
 	constructors map[string][]int // per type, in order
 	moved        map[int]bool
 }
@@ -187,16 +187,26 @@ func newLayout(decls []ast.Decl, receiver map[int]string) *layout {
 		constructors: make(map[string][]int),
 		moved:        make(map[int]bool),
 	}
+	hasMethods := make(map[string]bool)
+	for _, name := range receiver {
+		hasMethods[name] = true
+	}
 	declared := make(map[string]int)
 	for i, decl := range decls {
 		if gen, ok := decl.(*ast.GenDecl); ok {
-			l.gens = append(l.gens, i)
+			// A type with methods here anchors its own block, so it stays
+			// where it is rather than moving away from them.
+			anchorsBlock := false
 			if gen.Tok == token.TYPE {
 				for _, spec := range gen.Specs {
 					if typeSpec, ok := spec.(*ast.TypeSpec); ok {
 						declared[typeSpec.Name.Name] = i
+						anchorsBlock = anchorsBlock || hasMethods[typeSpec.Name.Name]
 					}
 				}
+			}
+			if !anchorsBlock {
+				l.gens = append(l.gens, i)
 			}
 		}
 		if typeName := constructorOf(decl); typeName != "" {

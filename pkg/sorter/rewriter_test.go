@@ -378,6 +378,32 @@ func TestSorterLeavesDeclarationsSharingALineAlone(t *testing.T) {
 	}
 }
 
+func TestSorterKeepsTypesWithMethodsInPlace(t *testing.T) {
+	// From Terraform's loader_snapshot.go: Loader is declared elsewhere, so
+	// its methods gather at the top. Snapshot sat between them, but it has
+	// its own constructor and method here, so it stays with them instead of
+	// moving above Loader's; the plain SnapshotModule moves up.
+	source := `package test
+
+func (l *Loader) ModuleWalkerSnapshot() { l.makeWalker() }
+
+type Snapshot struct{}
+
+func NewEmptySnapshot() *Snapshot { return nil }
+
+type SnapshotModule struct{}
+
+func (s *Snapshot) moduleManifest() {}
+
+func (l *Loader) makeWalker() {}
+`
+	assertOrder(t, sortSource(t, source), []string{
+		"type SnapshotModule struct{}",
+		"func (l *Loader) ModuleWalkerSnapshot()", "func (l *Loader) makeWalker()",
+		"type Snapshot struct{}", "func NewEmptySnapshot()", "func (s *Snapshot) moduleManifest()",
+	})
+}
+
 func TestSorterIsIdempotent(t *testing.T) {
 	// Sorting sorted code changes nothing, for every source these tests sort.
 	example, err := os.ReadFile("../../testdata/complex_example.go")
