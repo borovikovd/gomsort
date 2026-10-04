@@ -89,9 +89,9 @@ out=$(gomsort -n .) && [ -z "$out" ] || { echo "$out"; exit 1; }
 
 ## Scale
 
-gomsort parses with Go's own `go/parser` and moves declarations as text, so a dry run never pays for more than parsing. It sorts files in parallel, one per CPU at a time, and keeps nothing between files: memory follows the largest files being sorted at once, not the size of the codebase, and `GOMAXPROCS` caps it. Generated files, and files where no line starts with `func (` (no method, as gofmt writes one), are skipped before parsing. Each file takes time linear in its size, apart from sorting its methods (`O(m log m)` for `m` methods).
+gomsort parses with Go's own `go/parser` and moves declarations as text, so a dry run costs little more than parsing. It handles one file at a time and keeps nothing between files, so memory follows the largest file, not the size of the codebase. Generated files, and files where no line starts with `func (` (no method, as gofmt writes one), are skipped before parsing. Each file takes time linear in its size, apart from sorting its methods (`O(m log m)` for `m` methods).
 
-On Kubernetes (13,500 Go files, 2.3 million lines outside tests), a dry run takes about half a second and 30 MB on a 14-core M-series Mac, or 1.4 seconds and 20 MB on one core (`GOMAXPROCS=1`).
+On an M-series Mac, a dry run on Kubernetes (13,500 Go files, 2.3 million lines outside tests) takes about 1.4 seconds and 20 MB, and on Prometheus about 0.2 seconds.
 
 ## Example
 

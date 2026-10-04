@@ -631,28 +631,23 @@ func TestSkipDir(t *testing.T) {
 	}
 }
 
-func TestProcessFilesInParallelReportsInFileOrder(t *testing.T) {
-	// More files than CPUs: each unsorted file is listed, in file order, and
-	// the first broken file in file order is the error, though others after
-	// it were sorted too.
+func TestProcessDirectoryStopsAtFirstError(t *testing.T) {
+	// Files are sorted in walk order as they're reached: the unsorted ones
+	// before the broken f25.go are written and listed, the error names
+	// f25.go, and nothing after it is touched.
 	dir := t.TempDir()
-	var want []string
-	var files []string
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module p\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unsorted := "package p\n\ntype T struct{}\n\nfunc (t *T) b() {}\n\nfunc (t *T) A() { t.b() }\n"
 	for i := range 40 {
-		path := filepath.Join(dir, fmt.Sprintf("f%02d.go", i))
-		source := "package p\n\ntype T struct{}\n\nfunc (t *T) b() {}\n\nfunc (t *T) A() { t.b() }\n"
-		switch {
-		case i == 25 || i == 31:
+		source := unsorted
+		if i == 25 {
 			source = "package p\n\nfunc (t *T) broken(\n"
-		case i%3 == 0:
-			want = append(want, "Would sort methods in: "+path)
-		default:
-			source = "package p\n\ntype T struct{}\n"
 		}
-		if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d.go", i)), []byte(source), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		files = append(files, path)
 	}
 
 	r, w, err := os.Pipe()
@@ -661,7 +656,7 @@ func TestProcessFilesInParallelReportsInFileOrder(t *testing.T) {
 	}
 	stdout := os.Stdout
 	os.Stdout = w
-	err = processFiles(files, &Config{DryRun: true})
+	err = processDirectory(dir, &Config{Verbose: true})
 	os.Stdout = stdout
 	w.Close()
 	out, _ := io.ReadAll(r)
@@ -669,14 +664,11 @@ func TestProcessFilesInParallelReportsInFileOrder(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "f25.go") {
 		t.Errorf("error %v, want the one for f25.go", err)
 	}
-	// Output stops at the first error: the unsorted files before f25.go.
-	var before strings.Builder
-	for _, line := range want {
-		if line < "Would sort methods in: "+filepath.Join(dir, "f25.go") {
-			before.WriteString(line + "\n")
-		}
+	if got := strings.Count(string(out), "Methods sorted"); got != 25 {
+		t.Errorf("%d files sorted, want the 25 before f25.go:\n%s", got, out)
 	}
-	if string(out) != before.String() {
-		t.Errorf("output:\n%s\nwant:\n%s", out, before.String())
+	after, err := os.ReadFile(filepath.Join(dir, "f26.go"))
+	if err != nil || string(after) != unsorted {
+		t.Errorf("f26.go was touched: %q, %v", after, err)
 	}
 }

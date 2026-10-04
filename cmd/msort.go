@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/borovikovd/gomsort/pkg/sorter"
 )
@@ -67,75 +65,29 @@ func checkGoModule(dir string) error {
 }
 
 func processDirectory(dir string, config *Config) error {
-	files, err := goFiles(dir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
-	return processFiles(files, config)
-}
 
-// goFiles lists the files under dir that gomsort sorts, in walk order.
-func goFiles(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	var files []string
 	for _, entry := range entries {
 		path := filepath.Join(dir, entry.Name())
 		switch {
 		case entry.IsDir() && !skipDir(entry.Name()):
-			sub, err := goFiles(path)
-			if err != nil {
-				return nil, err
+			if err := processDirectory(path, config); err != nil {
+				return err
 			}
-			files = append(files, sub...)
 		case !entry.IsDir() && isSortable(entry.Name()):
-			files = append(files, path)
+			if err := processFile(path, config); err != nil {
+				return err
+			}
 		}
 	}
-	return files, nil
+	return nil
 }
 
 func isSortable(name string) bool {
 	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
-}
-
-// processFiles sorts files in parallel, one per CPU at a time, so memory
-// follows the largest files being sorted at once rather than how many there
-// are. It prints what happened in file order, and returns the first error in
-// file order.
-func processFiles(files []string, config *Config) error {
-	type result struct {
-		output string
-		err    error
-	}
-	results := make([]result, len(files))
-	next := make(chan int)
-	var wg sync.WaitGroup
-	for range min(runtime.GOMAXPROCS(0), len(files)) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range next {
-				results[i].output, results[i].err = sortFile(files[i], config)
-			}
-		}()
-	}
-	for i := range files {
-		next <- i
-	}
-	close(next)
-	wg.Wait()
-
-	for _, r := range results {
-		fmt.Print(r.output)
-		if r.err != nil {
-			return r.err
-		}
-	}
-	return nil
 }
 
 // skipDir reports whether a directory is one the go command ignores:
@@ -145,47 +97,38 @@ func skipDir(name string) bool {
 }
 
 func processFile(filename string, config *Config) error {
-	output, err := sortFile(filename, config)
-	fmt.Print(output)
-	return err
-}
-
-// sortFile sorts one file, writing it unless it's a dry run, and returns
-// what to print about it.
-func sortFile(filename string, config *Config) (string, error) {
-	var out strings.Builder
 	if config.Verbose {
-		fmt.Fprintf(&out, "Processing: %s\n", filename)
+		fmt.Printf("Processing: %s\n", filename)
 	}
 
 	source, err := os.ReadFile(filename)
 	if err != nil {
-		return out.String(), fmt.Errorf("reading %s: %w", filename, err)
+		return fmt.Errorf("reading %s: %w", filename, err)
 	}
 
 	methodSorter, err := sorter.NewFromSource(string(source))
 	if err != nil {
-		return out.String(), fmt.Errorf("parsing %s: %w", filename, err)
+		return fmt.Errorf("parsing %s: %w", filename, err)
 	}
 	sorted, changed, err := methodSorter.Sort()
 	if err != nil {
-		return out.String(), fmt.Errorf("sorting methods in %s: %w", filename, err)
+		return fmt.Errorf("sorting methods in %s: %w", filename, err)
 	}
 
 	switch {
 	case !changed:
 		if config.Verbose {
-			out.WriteString("  No changes needed\n")
+			fmt.Printf("  No changes needed\n")
 		}
 	case config.DryRun:
-		fmt.Fprintf(&out, "Would sort methods in: %s\n", filename)
+		fmt.Printf("Would sort methods in: %s\n", filename)
 	default:
 		if err := sorter.WriteFile(filename, sorted); err != nil {
-			return out.String(), fmt.Errorf("writing sorted file %s: %w", filename, err)
+			return fmt.Errorf("writing sorted file %s: %w", filename, err)
 		}
 		if config.Verbose {
-			out.WriteString("  Methods sorted\n")
+			fmt.Printf("  Methods sorted\n")
 		}
 	}
-	return out.String(), nil
+	return nil
 }
