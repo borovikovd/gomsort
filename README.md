@@ -71,7 +71,9 @@ gomsort -v file.go
 - `-n`: Dry run - show what would be changed without modifying files
 - `-v`: Verbose output
 
-**Note**: Like `go fmt`, gomsort processes directories recursively by default. It skips `_test.go` files, generated files (those marked `// Code generated ... DO NOT EDIT.`), and directories the go command ignores: `testdata`, `vendor`, and names starting with `.` or `_`.
+**Note**: Like `go fmt`, gomsort processes directories recursively by default, with or without a `go.mod`. It skips `_test.go` files, generated files (those marked `// Code generated ... DO NOT EDIT.`), and directories the go command ignores: `testdata`, `vendor`, and names starting with `.` or `_`. A file it can't parse is reported on stderr and the others are still sorted; gomsort then exits with status 1.
+
+gomsort parses with the `go/parser` of the Go that builds it. Its module asks for Go 1.27 as the toolchain, which `go install` fetches if yours is older and the release binaries are built with, so it knows current syntax such as methods with type parameters.
 
 ### As a check in CI
 
@@ -144,7 +146,7 @@ func (s *Server) helper() string {
 ## Development
 
 ### Prerequisites
-- Go 1.24 or later
+- Go 1.21 or later; the go command fetches the Go 1.27 toolchain the module asks for
 - make (optional, for convenience)
 
 ### Building

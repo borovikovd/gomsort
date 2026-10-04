@@ -10,15 +10,12 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [1.22.x, 1.23.x, 1.24.x]
 
     steps:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: ${{ matrix.go-version }}
+        go-version: 1.27.x
 
     - name: Check out code
       uses: actions/checkout@v4
@@ -29,9 +26,9 @@ jobs:
         path: |
           ~/.cache/go-build
           ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          ${{ runner.os }}-go-${{ matrix.go-version }}-
+          ${{ runner.os }}-go-
 
     - name: Download dependencies
       run: go mod download
@@ -61,12 +58,12 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: 1.24.x
+        go-version: 1.27.x
 
     - name: golangci-lint
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@v8
       with:
-        version: v1.64.8
+        version: v2.14.0
         args: --timeout=5m
 
   build:
@@ -81,7 +78,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: 1.24.x
+        go-version: 1.27.x
 
     - name: Build binary
       run: go build -v .
@@ -103,7 +100,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: 1.24.x
+        go-version: 1.27.x
 
     - name: Build binary
       run: go build -v .

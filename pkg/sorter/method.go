@@ -81,45 +81,135 @@ func sortMethods(methods []*MethodInfo) []*MethodInfo {
 		byRun[key] = append(byRun[key], m)
 	}
 
-	sorted := make([]*MethodInfo, 0, len(methods))
-	placed := make(map[*MethodInfo]bool, len(methods))
-	var place, placeHelpers func(m *MethodInfo)
-	place = func(m *MethodInfo) {
-		placed[m] = true
-		sorted = append(sorted, m)
-		placeHelpers(m)
-	}
-	placeHelpers = func(m *MethodInfo) {
-		for _, callee := range m.Callees {
-			if !placed[callee] && !callee.IsEntryPoint() {
-				place(callee)
-			}
-		}
-	}
+	p := &placer{placed: make(map[*MethodInfo]bool, len(methods))}
 	for _, key := range runs {
-		group := byRun[key]
-		var exported []*MethodInfo
-		for _, m := range group {
-			if m.IsExported {
-				placed[m] = true
-				sorted = append(sorted, m)
-				exported = append(exported, m)
-			}
+		p.placeRun(byRun[key])
+	}
+	return p.sorted
+}
+
+// placer appends methods in their sorted order.
+type placer struct {
+	sorted []*MethodInfo
+	placed map[*MethodInfo]bool
+}
+
+func (p *placer) placeRun(group []*MethodInfo) {
+	var exported []*MethodInfo
+	for _, m := range group {
+		if m.IsExported {
+			p.placed[m] = true
+			p.sorted = append(p.sorted, m)
+			exported = append(exported, m)
 		}
-		for _, m := range exported {
-			placeHelpers(m)
+	}
+	for _, m := range exported {
+		p.placeHelpers(m)
+	}
+	for _, m := range group {
+		if m.IsEntryPoint() && !p.placed[m] {
+			p.place(m)
 		}
-		for _, m := range group {
-			if m.IsEntryPoint() && !placed[m] {
-				place(m)
-			}
+	}
+	// What's left is used only within the run, recursively: its entry is in
+	// another run. Start from the recursive groups nothing else left uses,
+	// so their helpers still follow them.
+	roots := p.leftoverRoots(group)
+	for _, m := range group {
+		if !p.placed[m] && roots[m] {
+			p.place(m)
 		}
-		// Helpers only other helpers use, in a cycle, keep their order.
-		for _, m := range group {
-			if !placed[m] {
-				place(m)
+	}
+	// Every method left is reachable from a root; this keeps any that isn't
+	// rather than drop it.
+	for _, m := range group {
+		if !p.placed[m] {
+			p.place(m)
+		}
+	}
+}
+
+func (p *placer) placeHelpers(m *MethodInfo) {
+	for _, callee := range m.Callees {
+		if !p.placed[callee] && !callee.IsEntryPoint() {
+			p.place(callee)
+		}
+	}
+}
+
+func (p *placer) place(m *MethodInfo) {
+	p.placed[m] = true
+	p.sorted = append(p.sorted, m)
+	p.placeHelpers(m)
+}
+
+// leftoverRoots returns the methods of group not yet placed that are in a
+// recursive group no other unplaced method uses.
+func (p *placer) leftoverRoots(group []*MethodInfo) map[*MethodInfo]bool {
+	component := p.recursiveGroups(group)
+	used := make(map[int]bool)
+	for _, v := range group {
+		for _, w := range v.Callees {
+			if !p.placed[v] && !p.placed[w] && component[w] != component[v] {
+				used[component[w]] = true
 			}
 		}
 	}
-	return sorted
+	roots := make(map[*MethodInfo]bool)
+	for _, m := range group {
+		if !p.placed[m] && !used[component[m]] {
+			roots[m] = true
+		}
+	}
+	return roots
+}
+
+// recursiveGroups numbers the strongly connected components among the
+// methods of group not yet placed, with Tarjan's algorithm, in time linear
+// in the run: methods that reach each other share a number.
+func (p *placer) recursiveGroups(group []*MethodInfo) map[*MethodInfo]int {
+	var (
+		next      int
+		index     = make(map[*MethodInfo]int)
+		low       = make(map[*MethodInfo]int)
+		onStack   = make(map[*MethodInfo]bool)
+		component = make(map[*MethodInfo]int)
+		stack     []*MethodInfo
+		visit     func(v *MethodInfo)
+	)
+	visit = func(v *MethodInfo) {
+		index[v], low[v] = next, next
+		next++
+		stack = append(stack, v)
+		onStack[v] = true
+		for _, w := range v.Callees {
+			if p.placed[w] {
+				continue
+			}
+			if _, seen := index[w]; !seen {
+				visit(w)
+				low[v] = min(low[v], low[w])
+			} else if onStack[w] {
+				low[v] = min(low[v], index[w])
+			}
+		}
+		if low[v] != index[v] {
+			return
+		}
+		for {
+			w := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			onStack[w] = false
+			component[w] = index[v]
+			if w == v {
+				return
+			}
+		}
+	}
+	for _, m := range group {
+		if _, seen := index[m]; !seen && !p.placed[m] {
+			visit(m)
+		}
+	}
+	return component
 }

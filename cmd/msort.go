@@ -31,10 +31,6 @@ func processPath(path string, config *Config) error {
 	}
 
 	if info.IsDir() {
-		// Check if we're in a Go module context when processing directories
-		if err := checkGoModule(path); err != nil {
-			return err
-		}
 		return processDirectory(path, config)
 	}
 
@@ -45,26 +41,23 @@ func processPath(path string, config *Config) error {
 	return nil
 }
 
-func checkGoModule(dir string) error {
-	// Look for go.mod in current directory or any parent directory
-	current := dir
-	for {
-		goModPath := filepath.Join(current, "go.mod")
-		if _, err := os.Stat(goModPath); err == nil {
-			return nil // Found go.mod
-		}
-
-		parent := filepath.Dir(current)
-		if parent == current {
-			break // Reached filesystem root
-		}
-		current = parent
+// processDirectory sorts every Go file under dir. A file it can't sort is
+// reported on stderr and the others are still sorted, as gofmt does; it then
+// returns an error saying how many failed.
+func processDirectory(dir string, config *Config) error {
+	failed := 0
+	if err := sortTree(dir, config, &failed); err != nil {
+		return err
 	}
-
-	return fmt.Errorf("go.mod file not found in current directory or any parent directory; see 'go help modules'")
+	if failed > 0 {
+		return fmt.Errorf("%d file(s) couldn't be sorted", failed)
+	}
+	return nil
 }
 
-func processDirectory(dir string, config *Config) error {
+// sortTree sorts the Go files under dir in walk order, reporting each one
+// it can't sort on stderr and counting it in failed.
+func sortTree(dir string, config *Config, failed *int) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -74,12 +67,13 @@ func processDirectory(dir string, config *Config) error {
 		path := filepath.Join(dir, entry.Name())
 		switch {
 		case entry.IsDir() && !skipDir(entry.Name()):
-			if err := processDirectory(path, config); err != nil {
+			if err := sortTree(path, config, failed); err != nil {
 				return err
 			}
 		case !entry.IsDir() && isSortable(entry.Name()):
 			if err := processFile(path, config); err != nil {
-				return err
+				fmt.Fprintln(os.Stderr, err)
+				*failed++
 			}
 		}
 	}

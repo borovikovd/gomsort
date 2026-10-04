@@ -398,6 +398,44 @@ func (s *S) Start() { s.helper() }
 	})
 }
 
+func TestSorterStartsRecursiveSectionsFromTheirRoot(t *testing.T) {
+	// From CockroachDB's optfmt: in the second section, define is a helper
+	// of the recursive expr and onlyExpr, whose entry, toDoc, is in the
+	// first. The section starts from the recursive pair, not from define.
+	source := `package test
+
+type pp struct{}
+
+func (p *pp) toDoc() { p.expr() }
+
+func softstack() {}
+
+func (p *pp) define() {}
+
+func (p *pp) expr() { p.onlyExpr() }
+
+func (p *pp) onlyExpr() { p.define(); p.expr() }
+`
+	assertOrder(t, sortSource(t, source), []string{
+		"func (p *pp) toDoc()", "func softstack()",
+		"func (p *pp) expr()", "func (p *pp) onlyExpr()", "func (p *pp) define()",
+	})
+}
+
+func TestSorterParsesMethodsWithTypeParameters(t *testing.T) {
+	// Go 1.27 syntax, as in Gitea's services/context: gomsort's parser has
+	// to know it.
+	source := `package test
+
+type Context struct{}
+
+func (ctx *Context) json(v any) {}
+
+func (ctx *Context) JSONError[T string | []byte](msg T) { ctx.json(msg) }
+`
+	assertOrder(t, sortSource(t, source), []string{"func (ctx *Context) JSONError[", "func (ctx *Context) json("})
+}
+
 func TestSorterIsIdempotent(t *testing.T) {
 	// Sorting sorted code changes nothing, for every source these tests sort.
 	example, err := os.ReadFile("../../testdata/complex_example.go")

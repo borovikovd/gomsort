@@ -126,9 +126,10 @@ func (s *Server) listen() error {
 	serverMethods := make([]*MethodInfo, 0)
 
 	for _, method := range methods {
-		if method.ReceiverName == "Client" {
+		switch method.ReceiverName {
+		case "Client":
 			clientMethods = append(clientMethods, method)
-		} else if method.ReceiverName == "Server" {
+		case "Server":
 			serverMethods = append(serverMethods, method)
 		}
 	}

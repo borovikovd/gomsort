@@ -363,26 +363,6 @@ func TestSomething(t *testing.T) {}
 	}
 }
 
-func TestCheckGoModuleWithoutGoMod(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	config := &Config{
-		DryRun:  false,
-		Verbose: false,
-		Paths:   []string{tmpDir},
-	}
-
-	err := Run(config)
-	if err == nil {
-		t.Error("Expected error when no go.mod found")
-	}
-
-	expectedErrMsg := "go.mod file not found"
-	if !strings.Contains(err.Error(), expectedErrMsg) {
-		t.Errorf("Expected error about go.mod, got: %v", err)
-	}
-}
-
 func TestProcessDirectoryWithHiddenDirs(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -631,14 +611,26 @@ func TestSkipDir(t *testing.T) {
 	}
 }
 
-func TestProcessDirectoryStopsAtFirstError(t *testing.T) {
-	// Files are sorted in walk order as they're reached: the unsorted ones
-	// before the broken f25.go are written and listed, the error names
-	// f25.go, and nothing after it is touched.
+func TestRunWithoutGoMod(t *testing.T) {
+	// gomsort needs no module: a directory outside one sorts too.
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module p\n"), 0o644); err != nil {
+	path := filepath.Join(dir, "a.go")
+	if err := os.WriteFile(path, []byte("package p\n\ntype T struct{}\n\nfunc (t *T) b() {}\n\nfunc (t *T) A() { t.b() }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := Run(&Config{Paths: []string{dir}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), "func (t *T) A() { t.b() }\n\nfunc (t *T) b() {}") {
+		t.Errorf("not sorted:\n%s", got)
+	}
+}
+
+func TestProcessDirectoryContinuesPastErrors(t *testing.T) {
+	// A file that can't be parsed is reported on stderr, the others are all
+	// sorted, before and after it, and the error says how many failed.
+	dir := t.TempDir()
 	unsorted := "package p\n\ntype T struct{}\n\nfunc (t *T) b() {}\n\nfunc (t *T) A() { t.b() }\n"
 	for i := range 40 {
 		source := unsorted
@@ -650,25 +642,28 @@ func TestProcessDirectoryStopsAtFirstError(t *testing.T) {
 		}
 	}
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdout := os.Stdout
-	os.Stdout = w
-	err = processDirectory(dir, &Config{Verbose: true})
-	os.Stdout = stdout
-	w.Close()
-	out, _ := io.ReadAll(r)
+	stdoutR, stdoutW, _ := os.Pipe()
+	stderrR, stderrW, _ := os.Pipe()
+	stdout, stderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = stdoutW, stderrW
+	err := processDirectory(dir, &Config{Verbose: true})
+	os.Stdout, os.Stderr = stdout, stderr
+	stdoutW.Close()
+	stderrW.Close()
+	out, _ := io.ReadAll(stdoutR)
+	errOut, _ := io.ReadAll(stderrR)
 
-	if err == nil || !strings.Contains(err.Error(), "f25.go") {
-		t.Errorf("error %v, want the one for f25.go", err)
+	if err == nil || !strings.Contains(err.Error(), "1 file(s)") {
+		t.Errorf("error %v, want one file failed", err)
 	}
-	if got := strings.Count(string(out), "Methods sorted"); got != 25 {
-		t.Errorf("%d files sorted, want the 25 before f25.go:\n%s", got, out)
+	if !strings.Contains(string(errOut), "f25.go") {
+		t.Errorf("stderr %q doesn't name f25.go", errOut)
 	}
-	after, err := os.ReadFile(filepath.Join(dir, "f26.go"))
-	if err != nil || string(after) != unsorted {
-		t.Errorf("f26.go was touched: %q, %v", after, err)
+	if got := strings.Count(string(out), "Methods sorted"); got != 39 {
+		t.Errorf("%d files sorted, want the other 39:\n%s", got, out)
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, "f39.go"))
+	if !strings.Contains(string(after), "func (t *T) A() { t.b() }\n\nfunc (t *T) b() {}") {
+		t.Errorf("f39.go, after the broken file, wasn't sorted:\n%s", after)
 	}
 }
