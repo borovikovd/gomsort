@@ -15,26 +15,16 @@ type MethodInfo struct {
 	IsExported   bool
 	FuncDecl     *dst.FuncDecl
 	Position     int
-	InDegree     int // distinct methods of the same type that call this one
-	MaxDepth     int // longest chain of calls from an entry point to this one
+	Callees      []*MethodInfo // methods of the same type it uses, in order of first use
+	Callers      int           // methods of the same type that use it
+	UsedOutside  bool          // used by a function or another type's method in the file
 }
 
-type MethodSortKey struct {
-	ReceiverName string
-	IsExported   bool
-	InDegree     int
-	MaxDepth     int
-	OriginalPos  int
-}
-
-func (m *MethodInfo) SortKey() MethodSortKey {
-	return MethodSortKey{
-		ReceiverName: m.ReceiverName,
-		IsExported:   m.IsExported,
-		InDegree:     m.InDegree,
-		MaxDepth:     m.MaxDepth,
-		OriginalPos:  m.Position,
-	}
+// IsEntryPoint reports whether the method starts a group of its own rather
+// than following a method that uses it: it's exported, used from outside its
+// type, or not used by its type's other methods in this file.
+func (m *MethodInfo) IsEntryPoint() bool {
+	return m.IsExported || m.UsedOutside || m.Callers == 0
 }
 
 func extractMethodInfo(decl *dst.FuncDecl, position int) *MethodInfo {
@@ -53,56 +43,63 @@ func extractMethodInfo(decl *dst.FuncDecl, position int) *MethodInfo {
 	if len(recv.Names) > 0 && recv.Names[0].Name != "_" {
 		method.ReceiverVar = recv.Names[0].Name
 	}
-
-	typ, pointer := recv.Type, false
-	if star, ok := typ.(*dst.StarExpr); ok {
-		typ, pointer = star.X, true
-	}
-	// A generic type's receiver lists its type parameters: Set[T], Map[K, V].
-	switch generic := typ.(type) {
-	case *dst.IndexExpr:
-		typ = generic.X
-	case *dst.IndexListExpr:
-		typ = generic.X
-	}
-	if ident, ok := typ.(*dst.Ident); ok {
-		method.ReceiverName = ident.Name
-		method.ReceiverType = ident.Name
-		if pointer {
-			method.ReceiverType = "*" + ident.Name
+	if name := baseName(recv.Type); name != "" {
+		method.ReceiverName = name
+		method.ReceiverType = name
+		if _, pointer := recv.Type.(*dst.StarExpr); pointer {
+			method.ReceiverType = "*" + name
 		}
 	}
 
 	return method
 }
 
-// sortMethods orders methods by receiver type, then exported first, then
-// entry points before the helpers they call, then shared helpers last, then
-// by original position.
+// sortMethods orders each type's methods top-down, the way Clean Code's
+// stepdown rule reads: entry points, exported first and otherwise in their
+// current order, each followed by the helpers it uses, in the order it first
+// uses them, and theirs in turn. A helper several methods use follows the
+// first of them. Types come in the order of their first method.
 func sortMethods(methods []*MethodInfo) []*MethodInfo {
-	sorted := make([]*MethodInfo, len(methods))
-	copy(sorted, methods)
-	sort.SliceStable(sorted, func(i, j int) bool { return less(sorted[i], sorted[j]) })
+	byPosition := make([]*MethodInfo, len(methods))
+	copy(byPosition, methods)
+	sort.SliceStable(byPosition, func(i, j int) bool { return byPosition[i].Position < byPosition[j].Position })
+
+	var receivers []string
+	byReceiver := make(map[string][]*MethodInfo)
+	for _, m := range byPosition {
+		if _, seen := byReceiver[m.ReceiverName]; !seen {
+			receivers = append(receivers, m.ReceiverName)
+		}
+		byReceiver[m.ReceiverName] = append(byReceiver[m.ReceiverName], m)
+	}
+
+	sorted := make([]*MethodInfo, 0, len(methods))
+	placed := make(map[*MethodInfo]bool, len(methods))
+	var place func(m *MethodInfo)
+	place = func(m *MethodInfo) {
+		placed[m] = true
+		sorted = append(sorted, m)
+		for _, callee := range m.Callees {
+			if !placed[callee] && !callee.IsEntryPoint() {
+				place(callee)
+			}
+		}
+	}
+	for _, receiver := range receivers {
+		group := byReceiver[receiver]
+		for _, exported := range []bool{true, false} {
+			for _, m := range group {
+				if m.IsExported == exported && m.IsEntryPoint() && !placed[m] {
+					place(m)
+				}
+			}
+		}
+		// Helpers only other helpers use, in a cycle, keep their order.
+		for _, m := range group {
+			if !placed[m] {
+				place(m)
+			}
+		}
+	}
 	return sorted
-}
-
-func less(a, b *MethodInfo) bool {
-	if a.ReceiverName != b.ReceiverName {
-		return a.ReceiverName < b.ReceiverName
-	}
-	if a.IsExported != b.IsExported {
-		return a.IsExported
-	}
-	if a.MaxDepth != b.MaxDepth {
-		return a.MaxDepth < b.MaxDepth
-	}
-	if a.InDegree != b.InDegree {
-		return a.InDegree < b.InDegree
-	}
-	return a.Position < b.Position
-}
-
-// shouldSwap reports whether b belongs before a.
-func shouldSwap(a, b *MethodInfo) bool {
-	return less(b, a)
 }

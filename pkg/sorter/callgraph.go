@@ -1,55 +1,41 @@
 package sorter
 
 import (
-	"slices"
+	"go/token"
 	"sort"
 
 	"github.com/dave/dst"
 )
 
+// CallGraph records, for the methods in one file, which methods of the same
+// type each one uses, and which are used from outside their type: by a
+// function or by another type's methods.
 type CallGraph struct {
 	methods map[string]*MethodInfo
-	calls   map[string]map[string]bool // caller → the methods it uses, without itself
 }
 
 func NewCallGraph() *CallGraph {
-	return &CallGraph{
-		methods: make(map[string]*MethodInfo),
-		calls:   make(map[string]map[string]bool),
-	}
+	return &CallGraph{methods: make(map[string]*MethodInfo)}
 }
 
 func buildCallGraph(file *dst.File) *CallGraph {
 	cg := NewCallGraph()
 
-	var methods []*MethodInfo
+	position := 0
 	for _, decl := range file.Decls {
 		if funcDecl, ok := decl.(*dst.FuncDecl); ok {
-			if method := extractMethodInfo(funcDecl, len(methods)); method != nil {
+			if method := extractMethodInfo(funcDecl, position); method != nil {
 				cg.AddMethod(method)
-				methods = append(methods, method)
+				position++
 			}
 		}
 	}
 
-	// A method uses another when it calls it or passes it on as a value
-	// through its receiver: s.connect() or http.HandleFunc("/", s.serve).
-	// Fields can't share a method's name, so AddCall ignores them.
-	for _, method := range methods {
-		if method.ReceiverVar == "" || method.FuncDecl.Body == nil {
-			continue
+	for _, decl := range file.Decls {
+		if funcDecl, ok := decl.(*dst.FuncDecl); ok && funcDecl.Body != nil {
+			cg.addUses(funcDecl)
 		}
-		dst.Inspect(method.FuncDecl.Body, func(n dst.Node) bool {
-			if sel, ok := n.(*dst.SelectorExpr); ok {
-				if ident, ok := sel.X.(*dst.Ident); ok && ident.Name == method.ReceiverVar {
-					cg.AddCall(method.ReceiverName, method.Name, method.ReceiverName, sel.Sel.Name)
-				}
-			}
-			return true
-		})
 	}
-
-	cg.CalculateMetrics()
 	return cg
 }
 
@@ -61,67 +47,30 @@ func (cg *CallGraph) AddMethod(method *MethodInfo) {
 	cg.methods[methodKey(method.ReceiverName, method.Name)] = method
 }
 
-// AddCall records that one method uses another. A method calling itself says
-// nothing about where it belongs, so recursion is left out.
+// AddCall records that a function or method uses a method. fromReceiver is
+// "" for a function. A method using itself says nothing about where it
+// belongs, so recursion is left out.
 func (cg *CallGraph) AddCall(fromReceiver, fromMethod, toReceiver, toMethod string) {
-	from, to := methodKey(fromReceiver, fromMethod), methodKey(toReceiver, toMethod)
-	if from == to {
+	to, ok := cg.methods[methodKey(toReceiver, toMethod)]
+	if !ok || (fromReceiver == toReceiver && fromMethod == toMethod) {
 		return
 	}
-	if _, exists := cg.methods[to]; !exists {
+	if fromReceiver != toReceiver {
+		to.UsedOutside = true
 		return
 	}
-	if cg.calls[from] == nil {
-		cg.calls[from] = make(map[string]bool)
+	from := cg.methods[methodKey(fromReceiver, fromMethod)]
+	if from == nil || containsMethod(from.Callees, to) {
+		return
 	}
-	cg.calls[from][to] = true
-}
-
-// CalculateMetrics sets each method's InDegree, the distinct methods that use
-// it, and MaxDepth, the longest chain of calls reaching it from a method
-// nothing calls. Methods that call each other share a depth.
-func (cg *CallGraph) CalculateMetrics() {
-	keys := cg.sortedKeys()
-	for _, key := range keys {
-		cg.methods[key].InDegree = 0
-		cg.methods[key].MaxDepth = 0
-	}
-	for _, caller := range keys {
-		for callee := range cg.calls[caller] {
-			cg.methods[callee].InDegree++
-		}
-	}
-
-	components := cg.components(keys)
-	component := make(map[string]int, len(keys))
-	for i, members := range components {
-		for _, key := range members {
-			component[key] = i
-		}
-	}
-	// Components come callers first, so each one's depth is final by the
-	// time it passes it on.
-	depth := make([]int, len(components))
-	for i, members := range components {
-		for _, key := range members {
-			for callee := range cg.calls[key] {
-				if j := component[callee]; j != i {
-					depth[j] = max(depth[j], depth[i]+1)
-				}
-			}
-		}
-	}
-	for i, members := range components {
-		for _, key := range members {
-			cg.methods[key].MaxDepth = depth[i]
-		}
-	}
+	from.Callees = append(from.Callees, to)
+	to.Callers++
 }
 
 func (cg *CallGraph) GetMethods() []*MethodInfo {
 	methods := make([]*MethodInfo, 0, len(cg.methods))
-	for _, key := range cg.sortedKeys() {
-		methods = append(methods, cg.methods[key])
+	for _, method := range cg.methods {
+		methods = append(methods, method)
 	}
 	sort.Slice(methods, func(i, j int) bool {
 		return methods[i].Position < methods[j].Position
@@ -129,66 +78,151 @@ func (cg *CallGraph) GetMethods() []*MethodInfo {
 	return methods
 }
 
-// components returns the call graph's strongly connected components (Tarjan's
-// algorithm) in topological order: every component comes before the ones it
-// calls into.
-func (cg *CallGraph) components(keys []string) [][]string {
-	var (
-		next    int
-		index   = make(map[string]int, len(keys))
-		low     = make(map[string]int, len(keys))
-		onStack = make(map[string]bool, len(keys))
-		stack   []string
-		out     [][]string
-		visit   func(string)
-	)
-	visit = func(v string) {
-		index[v], low[v] = next, next
-		next++
-		stack = append(stack, v)
-		onStack[v] = true
-		callees := make([]string, 0, len(cg.calls[v]))
-		for w := range cg.calls[v] {
-			callees = append(callees, w)
-		}
-		sort.Strings(callees)
-		for _, w := range callees {
-			if _, seen := index[w]; !seen {
-				visit(w)
-				low[v] = min(low[v], low[w])
-			} else if onStack[w] {
-				low[v] = min(low[v], index[w])
+// addUses records every method decl uses, in the order it first uses them:
+// calls such as g.add(c), and method values passed on such as run(s.serve).
+func (cg *CallGraph) addUses(decl *dst.FuncDecl) {
+	fromReceiver, fromName := "", decl.Name.Name
+	vars := make(varTypes)
+	if method := extractMethodInfo(decl, 0); method != nil {
+		fromReceiver = method.ReceiverName
+	}
+	if decl.Recv != nil {
+		vars.declareFields(decl.Recv)
+	}
+	vars.declareFields(decl.Type.Params)
+	vars.declareFields(decl.Type.Results)
+
+	dst.Inspect(decl.Body, func(n dst.Node) bool {
+		vars.learn(n)
+		if sel, ok := n.(*dst.SelectorExpr); ok {
+			if typeName := baseName(vars.typeOf(sel.X)); typeName != "" {
+				cg.AddCall(fromReceiver, fromName, typeName, sel.Sel.Name)
 			}
 		}
-		if low[v] == index[v] {
-			var members []string
-			for {
-				w := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				onStack[w] = false
-				members = append(members, w)
-				if w == v {
-					break
-				}
-			}
-			out = append(out, members)
-		}
-	}
-	for _, key := range keys {
-		if _, seen := index[key]; !seen {
-			visit(key)
-		}
-	}
-	// Tarjan's algorithm finishes a component after everything it calls.
-	slices.Reverse(out)
-	return out
+		return true
+	})
 }
 
-func (cg *CallGraph) sortedKeys() []string {
-	keys := make([]string, 0, len(cg.methods))
-	for key := range cg.methods {
-		keys = append(keys, key)
+func containsMethod(list []*MethodInfo, m *MethodInfo) bool {
+	for _, x := range list {
+		if x == m {
+			return true
+		}
 	}
-	sort.Strings(keys)
-	return keys
+	return false
+}
+
+// varTypes holds the type each variable in a function was declared with, as
+// far as the file writes it out. Scopes are flattened: a later declaration
+// of the same name replaces an earlier one.
+type varTypes map[string]dst.Expr
+
+// learn records the variables n declares: x := T{...}, var x T, the value
+// in for _, x := range xs, and a function literal's parameters.
+func (v varTypes) learn(n dst.Node) {
+	switch n := n.(type) {
+	case *dst.AssignStmt:
+		if n.Tok == token.DEFINE && len(n.Lhs) == len(n.Rhs) {
+			for i, lhs := range n.Lhs {
+				if ident, ok := lhs.(*dst.Ident); ok {
+					v.declare(ident.Name, v.typeOf(n.Rhs[i]))
+				}
+			}
+		}
+	case *dst.ValueSpec:
+		for i, name := range n.Names {
+			switch {
+			case n.Type != nil:
+				v.declare(name.Name, n.Type)
+			case len(n.Values) == len(n.Names):
+				v.declare(name.Name, v.typeOf(n.Values[i]))
+			}
+		}
+	case *dst.RangeStmt:
+		if value, ok := n.Value.(*dst.Ident); ok && n.Tok == token.DEFINE {
+			v.declare(value.Name, elementType(v.typeOf(n.X)))
+		}
+	case *dst.FuncLit:
+		v.declareFields(n.Type.Params)
+	}
+}
+
+func (v varTypes) declare(name string, typ dst.Expr) {
+	if typ == nil {
+		delete(v, name)
+		return
+	}
+	v[name] = typ
+}
+
+// typeOf returns the type expression of x's value when the file shows it: a
+// variable's declared type, T{...}, &T{...}, new(T) or *p.
+func (v varTypes) typeOf(x dst.Expr) dst.Expr {
+	switch x := x.(type) {
+	case *dst.Ident:
+		return v[x.Name]
+	case *dst.ParenExpr:
+		return v.typeOf(x.X)
+	case *dst.CompositeLit:
+		return x.Type
+	case *dst.UnaryExpr:
+		if x.Op == token.AND {
+			if typ := v.typeOf(x.X); typ != nil {
+				return &dst.StarExpr{X: typ}
+			}
+		}
+	case *dst.StarExpr:
+		if star, ok := v.typeOf(x.X).(*dst.StarExpr); ok {
+			return star.X
+		}
+	case *dst.CallExpr:
+		if ident, ok := x.Fun.(*dst.Ident); ok && ident.Name == "new" && len(x.Args) == 1 {
+			return &dst.StarExpr{X: x.Args[0]}
+		}
+	}
+	return nil
+}
+
+func (v varTypes) declareFields(fields *dst.FieldList) {
+	if fields == nil {
+		return
+	}
+	for _, field := range fields.List {
+		typ := field.Type
+		if ellipsis, ok := typ.(*dst.Ellipsis); ok {
+			typ = &dst.ArrayType{Elt: ellipsis.Elt}
+		}
+		for _, name := range field.Names {
+			v.declare(name.Name, typ)
+		}
+	}
+}
+
+// elementType returns the element type of a slice, array or map type.
+func elementType(typ dst.Expr) dst.Expr {
+	switch typ := typ.(type) {
+	case *dst.ArrayType:
+		return typ.Elt
+	case *dst.MapType:
+		return typ.Value
+	}
+	return nil
+}
+
+// baseName returns the name of the named type typ refers to: T for T, *T,
+// T[A] and *T[A, B].
+func baseName(typ dst.Expr) string {
+	switch typ := typ.(type) {
+	case *dst.Ident:
+		return typ.Name
+	case *dst.StarExpr:
+		return baseName(typ.X)
+	case *dst.IndexExpr:
+		return baseName(typ.X)
+	case *dst.IndexListExpr:
+		return baseName(typ.X)
+	case *dst.ParenExpr:
+		return baseName(typ.X)
+	}
+	return ""
 }

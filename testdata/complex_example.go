@@ -10,7 +10,7 @@ type Database struct {
 
 // Complex example with various method types and call patterns
 
-// Helper method called by multiple methods (high in-degree)
+// Helper method used by several methods
 
 // Deep helper method (high depth)
 
@@ -57,7 +57,7 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 
 // Helper with medium depth
 
-// Shared helper (high in-degree)
+// Shared helper, used by several methods
 
 func (c *Cache) Set(key string, value interface{}) error {
 	if !c.isValid() {

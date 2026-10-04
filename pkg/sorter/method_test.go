@@ -1,65 +1,12 @@
 package sorter
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
 )
-
-func TestMethodSortKey(t *testing.T) {
-	tests := []struct {
-		name     string
-		method   *MethodInfo
-		expected MethodSortKey
-	}{
-		{
-			name: "exported method",
-			method: &MethodInfo{
-				Name:         "Connect",
-				ReceiverName: "Database",
-				IsExported:   true,
-				InDegree:     0,
-				MaxDepth:     1,
-				Position:     100,
-			},
-			expected: MethodSortKey{
-				ReceiverName: "Database",
-				IsExported:   true,
-				InDegree:     0,
-				MaxDepth:     1,
-				OriginalPos:  100,
-			},
-		},
-		{
-			name: "private helper",
-			method: &MethodInfo{
-				Name:         "validateConnection",
-				ReceiverName: "Database",
-				IsExported:   false,
-				InDegree:     3,
-				MaxDepth:     0,
-				Position:     200,
-			},
-			expected: MethodSortKey{
-				ReceiverName: "Database",
-				IsExported:   false,
-				InDegree:     3,
-				MaxDepth:     0,
-				OriginalPos:  200,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.method.SortKey()
-			if result != tt.expected {
-				t.Errorf("SortKey() = %+v, want %+v", result, tt.expected)
-			}
-		})
-	}
-}
 
 func TestExtractMethodInfo(t *testing.T) {
 	source := `
@@ -126,69 +73,26 @@ func NotAMethod() {}
 	}
 }
 
-func TestShouldSwap(t *testing.T) {
-	tests := []struct {
-		name     string
-		a        *MethodInfo
-		b        *MethodInfo
-		expected bool
-	}{
-		{
-			name:     "different receivers - alphabetical order",
-			a:        &MethodInfo{ReceiverName: "Client", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 100},
-			b:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 200},
-			expected: false, // Client comes before Server
-		},
-		{
-			name:     "same receiver - exported before private",
-			a:        &MethodInfo{ReceiverName: "Server", IsExported: false, MaxDepth: 1, InDegree: 0, Position: 100},
-			b:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 200},
-			expected: true, // private should come after exported
-		},
-		{
-			name:     "same receiver and export - lower depth first",
-			a:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 2, InDegree: 0, Position: 100},
-			b:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 200},
-			expected: true, // higher depth should come after lower depth
-		},
-		{
-			name:     "same receiver, export, depth - higher in-degree last",
-			a:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 100},
-			b:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 3, Position: 200},
-			expected: false, // lower in-degree should come before higher in-degree
-		},
-		{
-			name:     "all same - position fallback",
-			a:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 200},
-			b:        &MethodInfo{ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 100},
-			expected: true, // higher position should come after lower position
-		},
+func TestSortMethodsStepsDown(t *testing.T) {
+	// Exported entry points first, then unexported ones; each followed by the
+	// helpers it uses in the order it first uses them; a shared helper
+	// follows its first user; methods used from outside their type are entry
+	// points. Positions are the current order.
+	run := &MethodInfo{Name: "run", ReceiverName: "S", Position: 0}
+	helper := &MethodInfo{Name: "helper", ReceiverName: "S", Position: 1, Callers: 2}
+	Start := &MethodInfo{Name: "Start", ReceiverName: "S", IsExported: true, Position: 2}
+	parse := &MethodInfo{Name: "parse", ReceiverName: "S", Position: 3, Callers: 1}
+	add := &MethodInfo{Name: "add", ReceiverName: "S", Position: 4, Callers: 1, UsedOutside: true}
+	Start.Callees = []*MethodInfo{parse, helper}
+	parse.Callees = []*MethodInfo{add}
+	run.Callees = []*MethodInfo{helper}
+
+	var got []string
+	for _, m := range sortMethods([]*MethodInfo{run, helper, Start, parse, add}) {
+		got = append(got, m.Name)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := shouldSwap(tt.a, tt.b)
-			if result != tt.expected {
-				t.Errorf("shouldSwap() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestSortMethods(t *testing.T) {
-	methods := []*MethodInfo{
-		{Name: "helper", ReceiverName: "Server", IsExported: false, MaxDepth: 0, InDegree: 2, Position: 300},
-		{Name: "Start", ReceiverName: "Server", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 100},
-		{Name: "Connect", ReceiverName: "Client", IsExported: true, MaxDepth: 1, InDegree: 0, Position: 200},
-		{Name: "internal", ReceiverName: "Client", IsExported: false, MaxDepth: 0, InDegree: 1, Position: 400},
-	}
-
-	sorted := sortMethods(methods)
-
-	expectedOrder := []string{"Connect", "internal", "Start", "helper"}
-	for i, expected := range expectedOrder {
-		if sorted[i].Name != expected {
-			t.Errorf("Position %d: expected %s, got %s", i, expected, sorted[i].Name)
-		}
+	want := []string{"Start", "parse", "helper", "run", "add"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }

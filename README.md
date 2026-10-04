@@ -4,28 +4,27 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/borovikovd/gomsort)](https://goreportcard.com/report/github.com/borovikovd/gomsort)
 [![codecov](https://codecov.io/gh/borovikovd/gomsort/branch/main/graph/badge.svg)](https://codecov.io/gh/borovikovd/gomsort)
 
-A Go tool that sorts methods within types for better code readability. It reads which methods call which, and puts entry points before the helpers they use.
+A Go tool that sorts methods within types for better code readability. It reads which methods use which, and puts each method's helpers right below it, so a type reads top-down.
 
 ## Features
 
-- **Method sorting by call graph**: entry points first, the helpers they call after them
+- **Method sorting by call graph**: entry points first, each followed by the helpers it uses
 - **In place**: each type's methods are reordered among the places they already hold; types, functions and other declarations don't move
 - **CLI and analyzer**: a `gofmt`-style command, and a `go/analysis` analyzer for your own driver
 - **Safe**: only declarations move, with their comments; generated files, test files, `testdata` and `vendor` are left alone
 
 ## Sorting Algorithm
 
-Within each type, methods are sorted by:
+Within each type, methods are ordered top-down, the way Clean Code's stepdown rule reads:
 
-1. **Exported First**: Public methods appear before private methods
-2. **Call Depth**: Entry points come before the helpers they call, and those before the helpers they call in turn
-3. **In-Degree**: Among methods at the same depth, those used by more methods come later
-4. **Original Position**: Stable sort fallback
+1. **Entry points first**: exported methods, then methods used from outside the type (by a function or another type's methods in the file) or not used at all in the file. They keep their current order.
+2. **Helpers below their user**: each entry point is followed by the methods it uses, in the order it first uses them, and those by theirs.
+3. **Shared helpers once**: a helper several methods use follows the first of them.
 
 This means:
 - Public entry points appear at the top
-- Deep internal helpers appear near the bottom
-- Shared utility methods appear at the bottom
+- A method's helpers sit right below it
+- An edit moves only the methods whose first user changes; a method gaining another user stays put
 
 ## Installation
 
@@ -120,10 +119,6 @@ func (s *Server) Start() error {
     return s.connect()
 }
 
-func (s *Server) Stop() error {
-    return nil
-}
-
 func (s *Server) connect() error {
     s.helper()
     return nil
@@ -131,6 +126,10 @@ func (s *Server) connect() error {
 
 func (s *Server) helper() string {
     return "help"
+}
+
+func (s *Server) Stop() error {
+    return nil
 }
 ```
 
@@ -176,11 +175,9 @@ make dev  # fmt + lint + test
 The tool performs the following analysis:
 
 1. **Parse AST**: Extract all method declarations and their receivers
-2. **Build Call Graph**: Record which methods each method calls, or passes on as a value, through its receiver (`s.connect()`, `run(s.serve)`). Only calls between methods of the same type, in the same file, count; recursion doesn't.
-3. **Calculate Metrics**:
-   - **InDegree**: Number of distinct methods that call this method
-   - **MaxDepth**: Longest chain of calls from an entry point (a method nothing calls) to this method; methods that call each other share a depth
-4. **Sort Methods**: Apply the sorting criteria to each type's methods, and put them back in the places that type's methods held
+2. **Find Uses**: Record which methods each function and method uses, by calling them or passing them on as values (`g.add(c)`, `run(s.serve)`), in the order it first uses them. A use counts when the file shows the value's type: the receiver, parameters and results, `var` declarations, `T{...}`, `&T{...}`, `new(T)`, and ranges over slices or maps of `T`. Uses through struct fields or from other files aren't seen; recursion doesn't count.
+3. **Order**: For each type, place its entry points, each followed by its helpers depth first
+4. **Rewrite**: Put each type's methods back in the places that type's methods held
 
 ## License
 

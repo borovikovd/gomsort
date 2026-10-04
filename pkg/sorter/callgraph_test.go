@@ -1,6 +1,7 @@
 package sorter
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dave/dst/decorator"
@@ -54,30 +55,30 @@ func (s *Server) Status() string {
 	}
 
 	tests := []struct {
-		methodName     string
-		expectedDepth  int
-		expectedDegree int
+		methodName string
+		callees    string
+		callers    int
 	}{
-		{"Start", 0, 0},        // an entry point: nothing calls it
-		{"connect", 1, 2},      // called by Start and Status, both entry points
-		{"authenticate", 2, 1}, // called by connect, one call below them
-		{"Stop", 0, 0},         // an entry point
-		{"Status", 0, 0},       // an entry point
+		{"Start", "connect", 0},
+		{"connect", "authenticate", 2}, // used by Start and Status
+		{"authenticate", "", 1},
+		{"Stop", "", 0},
+		{"Status", "connect", 0},
 	}
-
 	for _, test := range tests {
-		method, exists := methodMap[test.methodName]
-		if !exists {
-			t.Errorf("Method %s not found", test.methodName)
-			continue
+		method := methodMap[test.methodName]
+		if method == nil {
+			t.Fatalf("method %s not found", test.methodName)
 		}
-
-		if method.MaxDepth != test.expectedDepth {
-			t.Errorf("Method %s: expected depth %d, got %d", test.methodName, test.expectedDepth, method.MaxDepth)
+		var callees []string
+		for _, c := range method.Callees {
+			callees = append(callees, c.Name)
 		}
-
-		if method.InDegree != test.expectedDegree {
-			t.Errorf("Method %s: expected in-degree %d, got %d", test.methodName, test.expectedDegree, method.InDegree)
+		if got := strings.Join(callees, " "); got != test.callees {
+			t.Errorf("%s uses %q, want %q", test.methodName, got, test.callees)
+		}
+		if method.Callers != test.callers {
+			t.Errorf("%s: %d callers, want %d", test.methodName, method.Callers, test.callers)
 		}
 	}
 }
@@ -166,12 +167,14 @@ func (s *Server) methodB() error {
 		t.Errorf("Expected 2 methods, got %d", len(methods))
 	}
 
-	// In case of cycles, the algorithm should handle it gracefully
-	// and not infinite loop
-	for _, method := range methods {
-		if method.MaxDepth < 0 {
-			t.Errorf("Method %s has negative depth: %d", method.Name, method.MaxDepth)
-		}
+	// Each uses the other, so neither is an entry point; both are still
+	// placed, in their order.
+	var names []string
+	for _, m := range sortMethods(methods) {
+		names = append(names, m.Name)
+	}
+	if got := strings.Join(names, " "); got != "methodA methodB" {
+		t.Errorf("got %q, want methodA methodB", got)
 	}
 }
 
@@ -217,13 +220,57 @@ func (t *Tree) visit() {
 	for _, m := range buildCallGraph(file).GetMethods() {
 		methods[m.Name] = m
 	}
-	if got := methods["visit"].InDegree; got != 1 {
-		t.Errorf("visit: in-degree %d, want 1 (Walk, counted once; recursion ignored)", got)
+	if got := methods["visit"].Callers; got != 1 {
+		t.Errorf("visit: %d callers, want 1 (Walk, counted once; recursion ignored)", got)
 	}
-	if got := methods["Walk"].MaxDepth; got != 0 {
-		t.Errorf("Walk: depth %d, want 0", got)
+	if got := len(methods["Walk"].Callees); got != 1 {
+		t.Errorf("Walk uses %d methods, want 1", got)
 	}
-	if got := methods["visit"].MaxDepth; got != 1 {
-		t.Errorf("visit: depth %d, want 1", got)
+}
+
+func TestCallGraphFindsUsesThroughTypedVariables(t *testing.T) {
+	// Plain functions and other types use ddlGen's methods through variables
+	// whose type the file shows; those methods become entry points.
+	source := `
+package test
+
+type ddlGen struct{}
+
+func (g ddlGen) alter(c Change) []string { return ddlGen{}.add(c) }
+func (g ddlGen) add(c Change) []string   { return nil }
+func (g ddlGen) drop(c Change) []string  { return nil }
+func (g ddlGen) quote() string           { return "" }
+func (g ddlGen) keep() string            { return "" }
+func (g ddlGen) unused() string          { return "" }
+
+func ChangeDDL(changes []Change) {
+	g := ddlGen{}
+	for _, c := range changes {
+		g.drop(c)
+	}
+	p := &ddlGen{}
+	_ = p.alter
+	var q ddlGen
+	q.quote()
+	for _, h := range []*ddlGen{} {
+		h.keep()
+	}
+}
+`
+	file, err := decorator.Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := map[string]*MethodInfo{}
+	for _, m := range buildCallGraph(file).GetMethods() {
+		methods[m.Name] = m
+	}
+	for name, outside := range map[string]bool{"alter": true, "add": false, "drop": true, "quote": true, "keep": true, "unused": false} {
+		if got := methods[name].UsedOutside; got != outside {
+			t.Errorf("%s: used outside %v, want %v", name, got, outside)
+		}
+	}
+	if got := methods["add"].Callers; got != 1 {
+		t.Errorf("add: %d callers, want 1 (alter, through ddlGen{})", got)
 	}
 }

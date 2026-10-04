@@ -13,23 +13,23 @@ func TestSorterIntegration(t *testing.T) {
 
 type Server struct{}
 
-// This should be last (private helper, high in-degree)
+// Second: Start uses it first.
 func (s *Server) helper() string {
 	return "help"
 }
 
-// This should be first (exported entry point)
+// First: an exported entry point.
 func (s *Server) Start() error {
 	s.helper()
 	return s.connect()
 }
 
-// This should be second (exported)
+// Last: an entry point too, after Start and its helpers.
 func (s *Server) Stop() error {
 	return nil
 }
 
-// This should be third (private, called by Start)
+// Third: Start uses it after helper.
 func (s *Server) connect() error {
 	s.helper()
 	return nil
@@ -44,37 +44,15 @@ func (s *Server) connect() error {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if !changed {
 		t.Error("Expected methods to be reordered")
 	}
-
-	sortedCode := string(sorted)
-
-	// Check that methods are in the correct order
-	startIndex := strings.Index(sortedCode, "func (s *Server) Start()")
-	stopIndex := strings.Index(sortedCode, "func (s *Server) Stop()")
-	connectIndex := strings.Index(sortedCode, "func (s *Server) connect()")
-	helperIndex := strings.Index(sortedCode, "func (s *Server) helper()")
-
-	if startIndex == -1 || stopIndex == -1 || connectIndex == -1 || helperIndex == -1 {
-		t.Fatal("Could not find all methods in sorted code")
-	}
-
-	// At minimum, exported methods (Start, Stop) should come before private methods (connect, helper)
-	minExported := startIndex
-	if stopIndex < minExported {
-		minExported = stopIndex
-	}
-
-	maxPrivate := connectIndex
-	if helperIndex > maxPrivate {
-		maxPrivate = helperIndex
-	}
-
-	if minExported > maxPrivate {
-		t.Errorf("Exported methods should come before private methods. Min exported: %d, Max private: %d", minExported, maxPrivate)
-	}
+	assertOrder(t, string(sorted), []string{
+		"// First: an exported entry point.\nfunc (s *Server) Start()",
+		"// Second: Start uses it first.\nfunc (s *Server) helper()",
+		"// Third: Start uses it after helper.\nfunc (s *Server) connect()",
+		"// Last: an entry point too, after Start and its helpers.\nfunc (s *Server) Stop()",
+	})
 }
 
 func TestSorterNoChanges(t *testing.T) {
@@ -157,7 +135,8 @@ func assertOrder(t *testing.T, code string, want []string) {
 
 func TestSorterKeepsMethodsInPlace(t *testing.T) {
 	// The README's example, with a constructor after the methods: methods are
-	// reordered among themselves and nothing moves past NewServer.
+	// reordered among themselves, each helper after the method using it, and
+	// nothing moves past NewServer.
 	source := `package test
 
 type Server struct {
@@ -197,9 +176,9 @@ func NewServer() *Server { return &Server{} }
 	assertOrder(t, string(sorted), []string{
 		"type Server struct",
 		"func (s *Server) Start()",
-		"func (s *Server) Stop()",
 		"func (s *Server) connect()",
 		"func (s *Server) helper()",
+		"func (s *Server) Stop()",
 		"func NewServer()",
 	})
 }
@@ -881,18 +860,8 @@ func (c *Client) Stop() error {
 
 	sortedCode := string(sorted)
 
-	// Check that Start and Stop come before helper (exported first)
-	startIndex := strings.Index(sortedCode, "func (c *Client) Start(")
-	stopIndex := strings.Index(sortedCode, "func (c *Client) Stop(")
-	helperIndex := strings.Index(sortedCode, "func (c *Client) helper(")
-
-	if startIndex == -1 || stopIndex == -1 || helperIndex == -1 {
-		t.Fatal("Could not find methods in sorted code")
-	}
-
-	if startIndex > helperIndex || stopIndex > helperIndex {
-		t.Error("Methods were not properly sorted - exported methods should come before private methods")
-	}
+	// Start, then helper, which Start uses, then Stop.
+	assertOrder(t, sortedCode, []string{"func (c *Client) Start(", "func (c *Client) helper(", "func (c *Client) Stop("})
 
 	// CRITICAL: Check that method header comments stay with their methods
 	// The comment should appear immediately before the method signature, not floating elsewhere
