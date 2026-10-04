@@ -21,7 +21,9 @@ Within each type:
 2. **Then call order**: the unexported methods the exported ones use, in the order they first use them, each followed by its own helpers, depth first. Then the other unexported entry points, used from outside the type (by a function or another type's methods in the file) or not at all, in their current order, each followed by its helpers.
 3. **Shared helpers once**: a helper several methods use follows the first of them.
 
-Each type's methods form one block where its first method is, laid out as the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#function-grouping-and-ordering) orders a file. Before the block go the const, var and type declarations that sat between its methods, then the type's constructors (`newT` or `NewT` returning `T`) from later in the file. Functions that sat between the methods follow the block in their order. Nothing before a type's first method moves.
+Each type's methods form one block, laid out as the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#function-grouping-and-ordering) orders a file. The block goes where the first of the type's methods after its declaration is, so methods written above their type join it below; when the type is declared in another file, or only has methods above its declaration, it goes where the first method is. Before the block go the const, var and type declarations that sat between its methods, then the type's constructors (`newT` or `NewT` returning `T`) from later in the file. Functions that sat between the methods follow the block in their order. Nothing else moves.
+
+Go doesn't depend on the order of top-level declarations, except that `init` functions and independent package-level variables initialize in the order they're written; gomsort never reorders functions among themselves or variable declarations among themselves.
 
 This means:
 - A type's public methods come first and its helpers after them, top-down
@@ -84,6 +86,10 @@ out=$(gomsort -n .) && [ -z "$out" ] || { echo "$out"; exit 1; }
 ### As an analyzer
 
 `github.com/borovikovd/gomsort/pkg/analyzer` provides a `go/analysis` analyzer named `msort` that reports files whose methods would be reordered, for use with `singlechecker`, `multichecker` or a custom golangci-lint build. It isn't one of golangci-lint's built-in linters.
+
+## Scale
+
+gomsort handles one file at a time and keeps nothing between files, so memory follows the largest file it sorts, not the size of the codebase. Generated files are recognized before parsing. Each file takes time linear in its size, apart from sorting its methods (`O(m log m)` for `m` methods), so a codebase takes time linear in its size. On Kubernetes (13,500 Go files, 2.3 million lines outside tests) a dry run takes about 7 seconds and 75 MB on an M-series Mac; on Prometheus, about a second and 30 MB.
 
 ## Example
 

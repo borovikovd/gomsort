@@ -65,9 +65,13 @@ func (cg *CallGraph) AddCall(fromReceiver, fromMethod, toReceiver, toMethod stri
 		return
 	}
 	from := cg.methods[methodKey(fromReceiver, fromMethod)]
-	if from == nil || containsMethod(from.Callees, to) {
+	if from == nil || from.uses[to] {
 		return
 	}
+	if from.uses == nil {
+		from.uses = make(map[*MethodInfo]bool)
+	}
+	from.uses[to] = true
 	from.Callees = append(from.Callees, to)
 	to.Callers++
 }
@@ -103,15 +107,6 @@ func (cg *CallGraph) addUses(decl *dst.FuncDecl, usedOutside map[string]bool) {
 		}
 		return true
 	})
-}
-
-func containsMethod(list []*MethodInfo, m *MethodInfo) bool {
-	for _, x := range list {
-		if x == m {
-			return true
-		}
-	}
-	return false
 }
 
 // baseName returns the name of the named type typ refers to: T for T, *T,

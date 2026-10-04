@@ -18,6 +18,8 @@ type MethodInfo struct {
 	Callees      []*MethodInfo // methods of the same type it uses, in order of first use
 	Callers      int           // methods of the same type that use it
 	UsedOutside  bool          // used by a function or another type's method in the file
+
+	uses map[*MethodInfo]bool // Callees, for looking up
 }
 
 // IsEntryPoint reports whether the method starts a group of its own rather
