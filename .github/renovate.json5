@@ -1,0 +1,35 @@
+// Renovate keeps gomsort's dependencies current: the Go toolchain that
+// builds it, golang.org/x/tools, the actions CI uses, pinned to digests, and
+// golangci-lint. Updates come once a week; security fixes, found with OSV,
+// don't wait. A new Go minor version releases a patch version
+// (.github/workflows/release.yml), since gomsort parses with the Go that
+// builds it. The go directive, the oldest Go that builds gomsort, stays:
+// Renovate doesn't propose it.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended', 'helpers:pinGitHubActionDigests'],
+  timezone: 'Europe/London',
+  schedule: ['* 6-11 * * 1'],
+  osvVulnerabilityAlerts: true,
+  semanticCommits: 'disabled',
+  postUpdateOptions: ['gomodTidy'],
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'golangci-lint, which make install-golangci-lint installs',
+      managerFilePatterns: ['/(^|/)Makefile$/'],
+      matchStrings: ['GOLANGCI_LINT_VERSION := (?<currentValue>v\\S+)'],
+      depNameTemplate: 'golangci/golangci-lint',
+      datasourceTemplate: 'github-releases',
+    },
+  ],
+  packageRules: [
+    {
+      // Everything but a major version goes into one pull request, which
+      // Renovate merges itself once CI passes. Majors wait for a person.
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pin', 'pinDigest'],
+      groupName: 'non-major dependencies',
+      automerge: true,
+    },
+  ],
+}

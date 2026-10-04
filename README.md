@@ -73,7 +73,7 @@ gomsort -v file.go
 
 **Note**: Like `go fmt`, gomsort processes directories recursively by default, with or without a `go.mod`. It skips `_test.go` files, generated files (those marked `// Code generated ... DO NOT EDIT.`), and directories the go command ignores: `testdata`, `vendor`, and names starting with `.` or `_`. A file it can't parse is reported on stderr and the others are still sorted; gomsort then exits with status 1.
 
-gomsort parses with the `go/parser` of the Go that builds it, as gofmt does, so it knows the syntax of that Go version. The release binaries are built with Go 1.27; `go install` builds with your Go, so use Go 1.27 or later for code with methods that have type parameters.
+gomsort parses with the `go/parser` of the Go that builds it, as gofmt does, so it knows the syntax of that Go version. The release binaries are built with the latest Go, and each new Go minor version brings a new release; `go install` builds with your Go, so use Go 1.27 or later for code with methods that have type parameters.
 
 ### As a check in CI
 

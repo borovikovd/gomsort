@@ -1,89 +1,83 @@
 name: Release
 
+# A tag pushed by hand releases that version. Renovate's merges release a
+# patch version when they move go.mod's toolchain to a new Go minor version:
+# gomsort parses with the Go that builds it, so the release binaries learn
+# that version's syntax. Once CI passes on main, if the toolchain's minor
+# version changed since the last tag and Renovate made every change since to
+# gomsort's code, go.mod and go.sum, this tags the next patch version on that
+# commit. Anyone else's change waits for a release tagged by hand.
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+
 jobs:
   release:
-    name: Release
+    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
-
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
-    - name: Check out code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0
+          fetch-tags: true
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: 1.27.x
+      - name: Choose the version
+        id: version
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$SHA")
+          go_minor() { git show "$1:go.mod" | sed -n 's/^toolchain go\([0-9]*\.[0-9]*\).*/\1/p'; }
+          if [ "$(go_minor "$last")" = "$(go_minor "$SHA")" ]; then
+            echo "The toolchain's Go minor version is the same as in $last."
+            exit 0
+          fi
+          shipped=(':(glob)**/*.go' ':(exclude,glob)**/*_test.go' go.mod go.sum)
+          authors=$(git log --no-merges --format=%an "$last..$SHA" -- "${shipped[@]}" | sort -u)
+          if [ "$authors" != "renovate[bot]" ]; then
+            echo "Changes since $last by $(echo $authors) wait for a release tagged by hand."
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<< "${last#v}"
+          echo "tag=v$major.$minor.$((patch + 1))" >> "$GITHUB_OUTPUT"
 
-    - name: Create release directory
-      run: mkdir -p dist
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.version.outputs.tag
+        with:
+          go-version-file: go.mod
+          cache: false
 
-    - name: Build for multiple platforms
-      run: |
-        # Linux AMD64
-        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/gomsort-linux-amd64 .
-        
-        # Linux ARM64
-        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/gomsort-linux-arm64 .
-        
-        # macOS AMD64
-        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/gomsort-darwin-amd64 .
-        
-        # macOS ARM64 (Apple Silicon)
-        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/gomsort-darwin-arm64 .
-        
-        # Windows AMD64
-        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/gomsort-windows-amd64.exe .
+      - name: Build
+        if: steps.version.outputs.tag
+        run: |
+          for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64; do
+            os=${target%-*} arch=${target#*-} ext=
+            [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch go build -ldflags="-s -w" -o "dist/gomsort-$target$ext" .
+          done
+          (cd dist && sha256sum * > checksums.txt)
 
-    - name: Create checksums
-      run: |
-        cd dist
-        sha256sum * > checksums.txt
-
-    - name: Create release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          dist/gomsort-linux-amd64
-          dist/gomsort-linux-arm64
-          dist/gomsort-darwin-amd64
-          dist/gomsort-darwin-arm64
-          dist/gomsort-windows-amd64.exe
-          dist/checksums.txt
-        body: |
-          ## Installation
-
-          ### Using go install
-          ```bash
-          go install github.com/borovikovd/gomsort@${{ github.ref_name }}
-          ```
-
-          ### Manual Installation
-          Download the appropriate binary for your platform from the assets below.
-
-          ### Usage
-          ```bash
-          # Sort methods in a single file
-          gomsort file.go
-
-          # Sort methods in all Go files in a directory (recursive by default)
-          gomsort ./src/
-
-          # Dry run to see what would be changed
-          gomsort -n file.go
-
-          # Verbose output
-          gomsort -v file.go
-          ```
-
-          ## What's Changed
-          See the commit history for detailed changes.
-        draft: false
-        prerelease: false
+      - name: Publish
+        if: steps.version.outputs.tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* --target "$SHA" --title "$TAG" --generate-notes \
+            --notes "Built with $(go env GOVERSION). \`go install github.com/borovikovd/gomsort@$TAG\` builds it with your Go instead."
