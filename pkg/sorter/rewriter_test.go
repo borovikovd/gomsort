@@ -326,6 +326,15 @@ func TestSorterDoesNotParseGeneratedFiles(t *testing.T) {
 	}
 }
 
+func TestSorterDoesNotParseFilesWithoutMethods(t *testing.T) {
+	// Not valid Go, but no line starts a method: nothing to parse.
+	source := "package test\n\nfunc main() {\n"
+	sorted, changed, err := mustSorter(t, source).Sort()
+	if err != nil || changed || string(sorted) != source {
+		t.Errorf("got %q, %v, %v; want the source back unchanged", sorted, changed, err)
+	}
+}
+
 func TestSorterReturnsUnchangedSourceAsGiven(t *testing.T) {
 	// Already sorted, but not gofmt'ed: it comes back byte for byte.
 	source := "package test\n\ntype S struct{}\n\nfunc (s *S) A()  {   }\n"
@@ -1123,8 +1132,9 @@ func TestWriteFileError(t *testing.T) {
 }
 
 func TestNewFromSourceWithInvalidSyntax(t *testing.T) {
+	// A file with a method is parsed, and its syntax errors reported.
 	invalidSource := `package test
-func invalid syntax here`
+func (s *S) invalid syntax here`
 
 	_, err := NewFromSource(invalidSource)
 	if err == nil {

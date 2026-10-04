@@ -89,7 +89,9 @@ out=$(gomsort -n .) && [ -z "$out" ] || { echo "$out"; exit 1; }
 
 ## Scale
 
-gomsort handles one file at a time and keeps nothing between files, so memory follows the largest file it sorts, not the size of the codebase. Generated files are recognized before parsing. Each file takes time linear in its size, apart from sorting its methods (`O(m log m)` for `m` methods), so a codebase takes time linear in its size. On Kubernetes (13,500 Go files, 2.3 million lines outside tests) a dry run takes about 7 seconds and 75 MB on an M-series Mac; on Prometheus, about a second and 30 MB.
+gomsort sorts files in parallel, one per CPU at a time, and keeps nothing between files, so memory follows the largest files being sorted at once, not the size of the codebase; set `GOMAXPROCS` to use fewer CPUs and less memory. Generated files, and files where no line starts with `func (` (no method, as gofmt writes one), are skipped before parsing. Each file takes time linear in its size, apart from sorting its methods (`O(m log m)` for `m` methods).
+
+On Kubernetes (13,500 Go files, 2.3 million lines outside tests), a dry run takes about 1.5 seconds and 170 MB on a 14-core M-series Mac, or 7 seconds and 60 MB with `GOMAXPROCS=1`. On Prometheus it takes well under a second.
 
 ## Example
 

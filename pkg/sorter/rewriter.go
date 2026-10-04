@@ -15,14 +15,15 @@ import (
 
 type Sorter struct {
 	source string
-	file   *dst.File // nil for a generated file, which isn't parsed
+	file   *dst.File // nil when there's nothing to sort, and source isn't parsed
 }
 
-// NewFromSource parses source, unless it's generated: generated files are
-// left as they are, since the next generation would undo the order, and they
-// can be large enough that parsing them would dominate memory.
+// NewFromSource parses source, unless there's nothing to sort: no line
+// starts a method declaration, or the file is generated, which is left as
+// it is since the next generation would undo the order. Parsing dominates
+// the time, and generated files can be large enough to dominate memory.
 func NewFromSource(source string) (*Sorter, error) {
-	if isGenerated(source) {
+	if !hasMethods(source) || isGenerated(source) {
 		return &Sorter{source: source}, nil
 	}
 	file, err := decorator.Parse(source)
@@ -172,6 +173,12 @@ func constructorOf(decl dst.Decl) string {
 		return ""
 	}
 	return baseName(fn.Type.Results.List[0].Type)
+}
+
+// hasMethods reports whether a line of source starts a method declaration,
+// as gofmt writes one: "func (". A file written otherwise isn't sorted.
+func hasMethods(source string) bool {
+	return strings.HasPrefix(source, "func (") || strings.Contains(source, "\nfunc (")
 }
 
 // generatedMarker is Go's marker for generated files:
