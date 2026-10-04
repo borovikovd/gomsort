@@ -13,23 +13,23 @@ func TestSorterIntegration(t *testing.T) {
 
 type Server struct{}
 
-// Second: Start uses it first.
+// Third: Start uses it first.
 func (s *Server) helper() string {
 	return "help"
 }
 
-// First: an exported entry point.
+// First: exported.
 func (s *Server) Start() error {
 	s.helper()
 	return s.connect()
 }
 
-// Last: an entry point too, after Start and its helpers.
+// Second: exported.
 func (s *Server) Stop() error {
 	return nil
 }
 
-// Third: Start uses it after helper.
+// Last: Start uses it after helper.
 func (s *Server) connect() error {
 	s.helper()
 	return nil
@@ -48,10 +48,10 @@ func (s *Server) connect() error {
 		t.Error("Expected methods to be reordered")
 	}
 	assertOrder(t, string(sorted), []string{
-		"// First: an exported entry point.\nfunc (s *Server) Start()",
-		"// Second: Start uses it first.\nfunc (s *Server) helper()",
-		"// Third: Start uses it after helper.\nfunc (s *Server) connect()",
-		"// Last: an entry point too, after Start and its helpers.\nfunc (s *Server) Stop()",
+		"// First: exported.\nfunc (s *Server) Start()",
+		"// Second: exported.\nfunc (s *Server) Stop()",
+		"// Third: Start uses it first.\nfunc (s *Server) helper()",
+		"// Last: Start uses it after helper.\nfunc (s *Server) connect()",
 	})
 }
 
@@ -111,9 +111,8 @@ func (c *Client) disconnect() {}
 		t.Error("Expected methods to be reordered")
 	}
 
-	// Each type's methods are sorted within the places they already held:
-	// Server's in the first and third, Client's in the second and fourth.
-	want := []string{"func (s *Server) Start()", "func (c *Client) Connect()", "func (s *Server) helper()", "func (c *Client) disconnect()"}
+	// Each type's methods gather, sorted, where its first method was.
+	want := []string{"func (s *Server) Start()", "func (s *Server) helper()", "func (c *Client) Connect()", "func (c *Client) disconnect()"}
 	assertOrder(t, string(sorted), want)
 }
 
@@ -134,9 +133,9 @@ func assertOrder(t *testing.T, code string, want []string) {
 }
 
 func TestSorterKeepsMethodsInPlace(t *testing.T) {
-	// The README's example, with a constructor after the methods: methods are
-	// reordered among themselves, each helper after the method using it, and
-	// nothing moves past NewServer.
+	// The README's example, with a constructor after the methods: exported
+	// methods first, then helpers in call order, and nothing moves past
+	// NewServer.
 	source := `package test
 
 type Server struct {
@@ -176,26 +175,26 @@ func NewServer() *Server { return &Server{} }
 	assertOrder(t, string(sorted), []string{
 		"type Server struct",
 		"func (s *Server) Start()",
+		"func (s *Server) Stop()",
 		"func (s *Server) connect()",
 		"func (s *Server) helper()",
-		"func (s *Server) Stop()",
 		"func NewServer()",
 	})
 }
 
 func TestSorterLeavesSortedTypesAlone(t *testing.T) {
-	// Each type's methods are already in order, though the types are
-	// interleaved and not alphabetical; nothing changes.
+	// Each type's methods are already together and in order, though the
+	// types aren't alphabetical; nothing changes.
 	source := `package test
 
-type Table struct{}
 type View struct{}
-
-func (t *Table) ID() string { return "" }
+type Table struct{}
 
 func (v *View) ID() string { return "" }
 
 func tablesByID() {}
+
+func (t *Table) ID() string { return "" }
 
 func (t *Table) Column() {}
 `
@@ -210,6 +209,39 @@ func (t *Table) Column() {}
 	if changed || string(sorted) != source {
 		t.Errorf("expected no change, got:\n%s", sorted)
 	}
+}
+
+func TestSorterMovesFunctionsAfterTheMethods(t *testing.T) {
+	// historyShows sat between Report's methods; it follows them now, and
+	// Run, before the first method, stays where it is.
+	source := `package test
+
+type Report struct{}
+
+func Run() { r := &Report{}; r.apply() }
+
+func (r *Report) apply() { r.step() }
+
+func historyShows() bool { return true }
+
+func (r *Report) step() {}
+
+func since() string { return "" }
+`
+	sorter, err := NewFromSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sorted, changed, err := sorter.Sort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Error("expected declarations to move")
+	}
+	assertOrder(t, string(sorted), []string{
+		"type Report struct", "func Run()", "func (r *Report) apply()", "func (r *Report) step()", "func historyShows()", "func since()",
+	})
 }
 
 func TestSorterFollowsAnyReceiverName(t *testing.T) {
@@ -860,8 +892,8 @@ func (c *Client) Stop() error {
 
 	sortedCode := string(sorted)
 
-	// Start, then helper, which Start uses, then Stop.
-	assertOrder(t, sortedCode, []string{"func (c *Client) Start(", "func (c *Client) helper(", "func (c *Client) Stop("})
+	// The exported methods, then helper, which Start uses.
+	assertOrder(t, sortedCode, []string{"func (c *Client) Start(", "func (c *Client) Stop(", "func (c *Client) helper("})
 
 	// CRITICAL: Check that method header comments stay with their methods
 	// The comment should appear immediately before the method signature, not floating elsewhere

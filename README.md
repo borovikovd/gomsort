@@ -4,26 +4,28 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/borovikovd/gomsort)](https://goreportcard.com/report/github.com/borovikovd/gomsort)
 [![codecov](https://codecov.io/gh/borovikovd/gomsort/branch/main/graph/badge.svg)](https://codecov.io/gh/borovikovd/gomsort)
 
-A Go tool that sorts methods within types for better code readability. It reads which methods use which, and puts each method's helpers right below it, so a type reads top-down.
+A Go tool that sorts methods within types the way Go code usually reads: each type's methods together, exported ones first, then the helpers in the order they're used.
 
 ## Features
 
-- **Method sorting by call graph**: entry points first, each followed by the helpers it uses
-- **In place**: each type's methods are reordered among the places they already hold; types, functions and other declarations don't move
+- **Method sorting by call graph**: exported methods first, then the helpers in call order
+- **Grouped by type**: each type's methods gather where its first method is; helper functions that sat between them follow the block, and nothing before it moves
 - **CLI and analyzer**: a `gofmt`-style command, and a `go/analysis` analyzer for your own driver
 - **Safe**: only declarations move, with their comments; generated files, test files, `testdata` and `vendor` are left alone
 
 ## Sorting Algorithm
 
-Within each type, methods are ordered top-down, the way Clean Code's stepdown rule reads:
+Within each type:
 
-1. **Entry points first**: exported methods, then methods used from outside the type (by a function or another type's methods in the file) or not used at all in the file. They keep their current order.
-2. **Helpers below their user**: each entry point is followed by the methods it uses, in the order it first uses them, and those by theirs.
+1. **Exported first**: exported methods, in their current order.
+2. **Then call order**: the unexported methods the exported ones use, in the order they first use them, each followed by its own helpers, depth first. Then the other unexported entry points, used from outside the type (by a function or another type's methods in the file) or not at all, in their current order, each followed by its helpers.
 3. **Shared helpers once**: a helper several methods use follows the first of them.
 
+Each type's methods form one block where its first method is. Declarations that sat between them, such as helper functions, follow the block in their order; nothing before a type's first method moves.
+
 This means:
-- Public entry points appear at the top
-- A method's helpers sit right below it
+- A type's public methods come first and its helpers after them, top-down
+- Plain helper functions end up after the methods that use them
 - An edit moves only the methods whose first user changes; a method gaining another user stays put
 
 ## Installation
@@ -119,6 +121,10 @@ func (s *Server) Start() error {
     return s.connect()
 }
 
+func (s *Server) Stop() error {
+    return nil
+}
+
 func (s *Server) connect() error {
     s.helper()
     return nil
@@ -126,10 +132,6 @@ func (s *Server) connect() error {
 
 func (s *Server) helper() string {
     return "help"
-}
-
-func (s *Server) Stop() error {
-    return nil
 }
 ```
 
@@ -176,8 +178,8 @@ The tool performs the following analysis:
 
 1. **Parse AST**: Extract all method declarations and their receivers
 2. **Find Uses**: Record which methods each function and method uses, by calling them or passing them on as values (`g.add(c)`, `run(s.serve)`), in the order it first uses them. A use counts when the file shows the value's type: the receiver, parameters and results, `var` declarations, `T{...}`, `&T{...}`, `new(T)`, and ranges over slices or maps of `T`. Uses through struct fields or from other files aren't seen; recursion doesn't count.
-3. **Order**: For each type, place its entry points, each followed by its helpers depth first
-4. **Rewrite**: Put each type's methods back in the places that type's methods held
+3. **Order**: For each type, place its exported methods, then its unexported methods in call order, depth first
+4. **Rewrite**: Gather each type's methods where its first method is, with whatever sat between them after the block
 
 ## License
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/dave/dst"
@@ -46,35 +47,33 @@ func (s *Sorter) Sort() ([]byte, bool, error) {
 	return buf.Bytes(), changed, nil
 }
 
-// reorderMethods puts each type's methods, in sorted order, into the places
-// that type's methods already hold, so types, functions and other
-// declarations stay where they are. It reports whether any method moved.
+// reorderMethods gathers each type's methods, in sorted order, where its
+// first method is. Declarations that sat between them, such as helper
+// functions, follow the block in their order; nothing before a type's first
+// method moves. It reports whether anything moved.
 func (s *Sorter) reorderMethods(sorted []*MethodInfo) bool {
-	receiver := make(map[*dst.FuncDecl]string, len(sorted))
-	byReceiver := make(map[string][]*dst.FuncDecl)
+	receiver := make(map[dst.Decl]string, len(sorted))
+	blocks := make(map[string][]dst.Decl)
 	for _, method := range sorted {
 		receiver[method.FuncDecl] = method.ReceiverName
-		byReceiver[method.ReceiverName] = append(byReceiver[method.ReceiverName], method.FuncDecl)
+		blocks[method.ReceiverName] = append(blocks[method.ReceiverName], method.FuncDecl)
 	}
 
-	changed := false
-	next := make(map[string]int)
-	for i, decl := range s.file.Decls {
-		funcDecl, ok := decl.(*dst.FuncDecl)
-		if !ok {
+	decls := make([]dst.Decl, 0, len(s.file.Decls))
+	for _, decl := range s.file.Decls {
+		name, isMethod := receiver[decl]
+		if !isMethod {
+			decls = append(decls, decl)
 			continue
 		}
-		name, ok := receiver[funcDecl]
-		if !ok {
-			continue
-		}
-		replacement := byReceiver[name][next[name]]
-		next[name]++
-		if replacement != funcDecl {
-			s.file.Decls[i] = replacement
-			changed = true
+		if block, first := blocks[name]; first {
+			decls = append(decls, block...)
+			delete(blocks, name)
 		}
 	}
+
+	changed := !slices.Equal(decls, s.file.Decls)
+	s.file.Decls = decls
 	return changed
 }
 

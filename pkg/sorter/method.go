@@ -54,11 +54,13 @@ func extractMethodInfo(decl *dst.FuncDecl, position int) *MethodInfo {
 	return method
 }
 
-// sortMethods orders each type's methods top-down, the way Clean Code's
-// stepdown rule reads: entry points, exported first and otherwise in their
-// current order, each followed by the helpers it uses, in the order it first
-// uses them, and theirs in turn. A helper several methods use follows the
-// first of them. Types come in the order of their first method.
+// sortMethods orders each type's methods the way Go code usually reads:
+// exported methods first, in their current order, then the rest in call
+// order. That is, the helpers the exported methods use, in the order they
+// first use them, then the other unexported entry points in their current
+// order, each followed by its helpers, depth first. A helper several methods
+// use follows the first of them. Types come in the order of their first
+// method.
 func sortMethods(methods []*MethodInfo) []*MethodInfo {
 	byPosition := make([]*MethodInfo, len(methods))
 	copy(byPosition, methods)
@@ -75,10 +77,13 @@ func sortMethods(methods []*MethodInfo) []*MethodInfo {
 
 	sorted := make([]*MethodInfo, 0, len(methods))
 	placed := make(map[*MethodInfo]bool, len(methods))
-	var place func(m *MethodInfo)
+	var place, placeHelpers func(m *MethodInfo)
 	place = func(m *MethodInfo) {
 		placed[m] = true
 		sorted = append(sorted, m)
+		placeHelpers(m)
+	}
+	placeHelpers = func(m *MethodInfo) {
 		for _, callee := range m.Callees {
 			if !placed[callee] && !callee.IsEntryPoint() {
 				place(callee)
@@ -87,11 +92,20 @@ func sortMethods(methods []*MethodInfo) []*MethodInfo {
 	}
 	for _, receiver := range receivers {
 		group := byReceiver[receiver]
-		for _, exported := range []bool{true, false} {
-			for _, m := range group {
-				if m.IsExported == exported && m.IsEntryPoint() && !placed[m] {
-					place(m)
-				}
+		var exported []*MethodInfo
+		for _, m := range group {
+			if m.IsExported {
+				placed[m] = true
+				sorted = append(sorted, m)
+				exported = append(exported, m)
+			}
+		}
+		for _, m := range exported {
+			placeHelpers(m)
+		}
+		for _, m := range group {
+			if m.IsEntryPoint() && !placed[m] {
+				place(m)
 			}
 		}
 		// Helpers only other helpers use, in a cycle, keep their order.
