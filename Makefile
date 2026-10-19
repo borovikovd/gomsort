@@ -1,7 +1,7 @@
 # Variables
 BINARY_NAME := gomsort
 GO_VERSION := 1.24.5
-GOLANGCI_LINT_VERSION := v2.14.0
+GOLANGCI_LINT_VERSION := v2.15.0
 
 # Add Go bin to PATH
 GOPATH := $(shell go env GOPATH)
