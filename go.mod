@@ -7,4 +7,4 @@ go 1.26.0
 // parameters (Go 1.27).
 toolchain go1.27.4
 
-require golang.org/x/tools v0.52.0
+require golang.org/x/tools v0.53.0
